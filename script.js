@@ -233,6 +233,7 @@ const DOM = {
   chatSendBtn: document.getElementById('chat-send-btn'),
   emoteToggleBtn: document.getElementById('emote-toggle-btn'),
   emoteGrid: document.getElementById('emote-grid'),
+  emojiPicker: document.getElementById('emoji-picker'),
 
   toast: document.getElementById('toast')
 };
@@ -1722,7 +1723,7 @@ DOM.emoteToggleBtn.addEventListener('click', () => {
 });
 
 function buildEmoteGrid() {
-  DOM.emoteGrid.innerHTML = EMOTES.map((em) =>
+  DOM.emojiPicker.innerHTML = EMOTES.map((em) =>
     `<button class="emote-btn" data-emote="${em.e}" data-sound="${em.s}" title="${em.e}">${em.e}</button>`
   ).join('');
 
