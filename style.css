@@ -658,6 +658,7 @@ input[type='text'] {
   justify-content: center;
   z-index: 1;
   pointer-events: none;
+  padding-bottom: 20vh;
 }
 
 .deck-area {
@@ -734,7 +735,7 @@ input[type='text'] {
   flex-direction: column;
   align-items: center;
   gap: var(--spacing-xs);
-  max-width: 240px;
+  max-width: 210px;
   pointer-events: none;
 }
 
@@ -1026,33 +1027,57 @@ input[type='text'] {
    FLOATING STATUS PILL (minimal)
    ============================================ */
 
-.status-pill {
+.status-float {
   position: fixed;
   top: 70px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(38, 37, 35, 0.85);
+  right: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  z-index: 30;
+  pointer-events: none;
+  max-width: 48vw;
+}
+
+.status-pill {
+  background: rgba(38, 37, 35, 0.9);
   backdrop-filter: blur(6px);
   border: 1px solid var(--color-border);
   color: var(--color-text);
-  padding: 8px 18px;
+  padding: 8px 16px;
   border-radius: 999px;
   font-size: 0.85rem;
   font-weight: 600;
-  z-index: 30;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
-  pointer-events: none;
-  transition: all 0.2s ease;
-  max-width: 72vw;
-  text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .status-pill.winner {
   border-color: var(--color-amber);
   color: var(--color-amber);
+}
+
+.status-event {
+  background: rgba(23, 22, 21, 0.85);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--color-border-soft);
+  color: var(--color-text-muted);
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+}
+
+.status-event.event-pop {
+  animation: eventFade 3s ease forwards;
 }
 
 /* ============================================
@@ -1284,7 +1309,7 @@ input[type='text'] {
 .chat-panel {
   position: fixed;
   left: 16px;
-  top: 50%;
+  top: 45%;
   transform: translateY(-50%);
   width: min(90vw, 300px);
   max-height: 58vh;
@@ -1297,7 +1322,7 @@ input[type='text'] {
   overflow: hidden;
   z-index: 150;
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
-  animation: slideInLeft 0.25s ease;
+  animation: chatIn 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .chat-panel.hidden {
@@ -1380,15 +1405,6 @@ input[type='text'] {
 .chat-emote .chat-emote-symbol {
   font-size: 1.9rem;
   animation: popIn 0.25s ease;
-}
-
-.chat-system {
-  font-size: 0.7rem;
-  color: var(--color-text-muted);
-  font-style: italic;
-  text-align: center;
-  padding: 2px 0;
-  opacity: 0.85;
 }
 
 .chat-input-row {
@@ -1482,7 +1498,7 @@ input[type='text'] {
 .chat-show-btn {
   position: fixed;
   left: 16px;
-  top: 50%;
+  top: 45%;
   transform: translateY(-50%);
   width: 46px;
   height: 46px;
@@ -1494,6 +1510,7 @@ input[type='text'] {
   z-index: 150;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
   transition: all 0.2s ease;
+  animation: btnPop 0.25s ease;
 }
 
 .chat-show-btn:hover {
@@ -1566,6 +1583,45 @@ input[type='text'] {
   }
 }
 
+@keyframes chatIn {
+  from {
+    opacity: 0;
+    transform: translate(-18px, -50%) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate(0, -50%) scale(1);
+  }
+}
+
+@keyframes btnPop {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-50%) scale(1);
+  }
+}
+
+@keyframes eventFade {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  12% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -1621,7 +1677,7 @@ input[type='text'] {
   }
 
   .seat {
-    max-width: 180px;
+    max-width: 160px;
   }
 
   .lobby-container {
@@ -1633,10 +1689,20 @@ input[type='text'] {
     gap: var(--spacing-sm);
   }
 
+  .status-float {
+    top: 62px;
+    right: 12px;
+    max-width: 60vw;
+  }
+
   .status-pill {
-    top: 64px;
     font-size: 0.78rem;
     padding: 6px 14px;
+  }
+
+  .status-event {
+    font-size: 0.68rem;
+    padding: 4px 10px;
   }
 
   .player-dock {
@@ -1655,11 +1721,31 @@ input[type='text'] {
 
   .chat-panel {
     left: 10px;
+    top: 43%;
     width: min(85vw, 240px);
   }
 
   .chat-show-btn {
     left: 10px;
+    top: 43%;
+  }
+}
+
+@media (max-height: 620px) {
+  .table-center {
+    padding-bottom: 14vh;
+  }
+
+  .player-dock {
+    padding: 6px 10px 8px;
+  }
+
+  .my-hand {
+    padding-top: 12px;
+  }
+
+  .status-float {
+    top: 60px;
   }
 }
 

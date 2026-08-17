@@ -214,6 +214,7 @@ const DOM = {
   unoBtn: document.getElementById('uno-btn'),
 
   statusPill: document.getElementById('status-pill'),
+  statusEvent: document.getElementById('status-event'),
   newRoundBtn: document.getElementById('new-round-btn'),
   settingsBtn: document.getElementById('settings-btn'),
   settingsModal: document.getElementById('settings-modal'),
@@ -443,10 +444,7 @@ function playEmoteSound(name) {
 function appendChat(msg) {
   const el = document.createElement('div');
 
-  if (msg.kind === 'system') {
-    el.className = 'chat-system';
-    el.textContent = msg.text;
-  } else if (msg.kind === 'emote') {
+  if (msg.kind === 'emote') {
     el.className = 'chat-msg chat-emote';
     el.innerHTML = `
       <span class="chat-avatar">${escapeHtml(msg.avatar || '👤')}</span>
@@ -781,6 +779,13 @@ function applyStatePayload(payload) {
     DOM.roomInfoDisplay.textContent = `Room: ${gameState.roomCode}`;
   }
   renderGameplay();
+
+  if (gameState.winner) {
+    pushStatusEvent(`🏆 ${gameState.winner.name} menang!`);
+  } else {
+    const cur = gameState.players[gameState.currentPlayer];
+    if (cur) pushStatusEvent(`Giliran ${cur.name}`);
+  }
 }
 
 /* ============================================
@@ -1291,13 +1296,18 @@ function positionSeat(seat, idx, meIdx, total) {
 
   let x;
   let y;
-  if (others <= 1) {
+  if (others === 1) {
     x = 50;
-    y = 9;
+    y = 10;
+  } else if (others === 2) {
+    x = pos === 0 ? 26 : 74;
+    y = 12;
   } else {
+    // Elliptical arc across the top for 3-5 opponents (up to 6 players total)
     const t = pos / (others - 1);
-    x = 12 + t * 76;
-    y = 9 + Math.pow(Math.abs(t - 0.5) * 2, 2) * 14;
+    const angle = Math.PI * (1 - t);
+    x = 50 + 38 * Math.cos(angle);
+    y = 12 + 20 * Math.sin(angle);
   }
 
   seat.style.left = `${x}%`;
@@ -1444,7 +1454,16 @@ function drawAction() {
 function addLog(message) {
   gameState.log.unshift(message);
   if (gameState.log.length > 40) gameState.log.pop();
-  appendChat({ kind: 'system', text: message });
+  pushStatusEvent(message);
+}
+
+function pushStatusEvent(message) {
+  const el = DOM.statusEvent;
+  if (!el) return;
+  el.textContent = message;
+  el.classList.remove('event-pop');
+  void el.offsetWidth;
+  el.classList.add('event-pop');
 }
 
 /* ============================================
