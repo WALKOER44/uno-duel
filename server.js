@@ -1,4 +1,4 @@
-import express from 'express';
+﻿import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import path from 'path';
@@ -66,9 +66,12 @@ function nextTurn(length, currIdx, direction) {
   return next;
 }
 
-function isPlayable(card, topCard) {
+function isValidMove(card, topCard) {
+  if (!card) return false;
   if (!topCard) return true;
-  if (card.color === 'wild') return true;
+  if (card.color === 'wild' || card.value === 'wild' || card.value === 'wild4') {
+    return true;
+  }
   if (card.color === topCard.color) return true;
   if (card.value === topCard.value) return true;
   return false;
@@ -238,7 +241,7 @@ io.on('connection', (socket) => {
     const card = player.hand[cardIndex];
     const topCard = room.discard[room.discard.length - 1];
 
-    if (!card || !isPlayable(card, topCard)) {
+    if (!card || !isValidMove(card, topCard)) {
       socket.emit('error', { message: 'Kartu tidak bisa dimainkan.' });
       return;
     }
@@ -250,7 +253,7 @@ io.on('connection', (socket) => {
 
     if (player.hand.length === 0) {
       room.winner = player.name;
-      room.message = `${player.name} menang! 🎉`;
+      room.message = `${player.name} menang! ðŸŽ‰`;
       broadcastRoomState(room);
       return;
     }
@@ -319,7 +322,7 @@ io.on('connection', (socket) => {
     room.players[playerIdx].hand.push(drawnCard);
     room.message = `${room.players[playerIdx].name} ambil kartu`;
 
-    if (isPlayable(drawnCard, room.discard[room.discard.length - 1])) {
+    if (isValidMove(drawnCard, room.discard[room.discard.length - 1])) {
       room.message += ' (bisa dimainkan)';
     } else {
       room.currentPlayer = nextTurn(room.players.length, playerIdx, room.direction);
@@ -366,6 +369,6 @@ io.on('connection', (socket) => {
 });
 
 httpServer.listen(PORT, () => {
-  console.log(`\n🎮 UNO Server running on http://localhost:${PORT}\n`);
+  console.log(`\nðŸŽ® UNO Server running on http://localhost:${PORT}\n`);
 });
 

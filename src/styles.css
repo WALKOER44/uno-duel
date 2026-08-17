@@ -739,7 +739,7 @@ input[type='text'] {
 
 .seat-opponent {
   pointer-events: none;
-  max-width: 170px;
+  max-width: 240px;
 }
 
 .seat-name-row {
@@ -773,28 +773,22 @@ input[type='text'] {
   text-align: center;
 }
 
-/* OPPONENT CARD STACK (HIDDEN FACES) */
+/* OPPONENT CARD STACK - 1:1 FULL SIZE, HIDDEN FACES */
 .opponent-stack {
   display: flex;
   align-items: center;
-}
-
-.mini-back {
-  width: var(--mini-width);
-  height: var(--mini-height);
-  border-radius: 5px;
-  background: linear-gradient(135deg, #8a5a3b, #5f442e);
-  border: 1px solid rgba(217, 160, 107, 0.35);
-  display: flex;
-  align-items: center;
   justify-content: center;
-  color: var(--color-on-card);
-  font-size: 0.8rem;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  padding: 0 6px;
 }
 
-.mini-back:not(:first-child) {
-  margin-left: -16px;
+.opponent-stack .uno-card.back-card {
+  width: var(--card-width);
+  height: var(--card-height);
+  margin-left: 0;
+}
+
+.opponent-stack .uno-card.back-card:not(:first-child) {
+  margin-left: calc(var(--card-width) * -0.62);
 }
 
 /* MY HAND */
@@ -1013,7 +1007,7 @@ input[type='text'] {
   letter-spacing: 0.5px;
 }
 
-/* COLOR PICKER */
+/* COLOR PICKER - BIG, CLEAR, EASY TO CLICK */
 .color-picker-box {
   background: var(--color-accent-soft);
   border-color: rgba(217, 119, 87, 0.3);
@@ -1022,21 +1016,74 @@ input[type='text'] {
 .color-options {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: var(--spacing-sm);
+  gap: 10px;
 }
 
 .color-button {
-  padding: var(--spacing-md);
-  border: 2px solid var(--color-border);
-  border-radius: 6px;
-  font-size: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 10px;
+  border: 2px solid transparent;
+  border-radius: 10px;
   background: var(--color-bg-deep);
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--color-text);
   transition: all 0.2s ease;
 }
 
 .color-button:hover {
-  transform: scale(1.1);
-  border-color: var(--color-accent);
+  transform: scale(1.05);
+  border-color: var(--color-text);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.color-button:active {
+  transform: scale(0.96);
+}
+
+.color-button .color-swatch {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid rgba(0, 0, 0, 0.35);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  flex-shrink: 0;
+}
+
+.color-button.color-red .color-swatch {
+  background: linear-gradient(135deg, var(--color-red-hover), var(--color-red));
+}
+
+.color-button.color-yellow .color-swatch {
+  background: linear-gradient(135deg, var(--color-yellow-hover), var(--color-yellow));
+}
+
+.color-button.color-green .color-swatch {
+  background: linear-gradient(135deg, var(--color-green-hover), var(--color-green));
+}
+
+.color-button.color-blue .color-swatch {
+  background: linear-gradient(135deg, var(--color-blue-hover), var(--color-blue));
+}
+
+.color-button.color-red:hover {
+  border-color: var(--color-red-hover);
+}
+
+.color-button.color-yellow:hover {
+  border-color: var(--color-yellow-hover);
+}
+
+.color-button.color-green:hover {
+  border-color: var(--color-green-hover);
+}
+
+.color-button.color-blue:hover {
+  border-color: var(--color-blue-hover);
 }
 
 .color-button.hidden {
@@ -1204,7 +1251,7 @@ input[type='text'] {
   }
 
   .seat-opponent {
-    max-width: 130px;
+    max-width: 180px;
   }
 
   .lobby-container {

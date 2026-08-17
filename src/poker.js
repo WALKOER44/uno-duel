@@ -57,8 +57,19 @@ export function isPlayableCard(card, topCard) {
   return false;
 }
 
+export function isValidMove(card, topCard) {
+  if (!card) return false;
+  if (!topCard) return true;
+  if (card.color === 'wild' || card.value === 'wild' || card.value === 'wild4') {
+    return true;
+  }
+  if (card.color === topCard.color) return true;
+  if (card.value === topCard.value) return true;
+  return false;
+}
+
 export function getPlayableCards(hand, topCard) {
-  return hand.filter((card) => isPlayableCard(card, topCard));
+  return hand.filter((card) => isValidMove(card, topCard));
 }
 
 export function getCardLabel(card) {
