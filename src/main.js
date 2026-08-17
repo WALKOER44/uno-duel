@@ -8,7 +8,20 @@ import { createDeck, shuffleDeck, isValidMove, getCardLabel } from './poker.js';
 const COLORS = ['red', 'yellow', 'green', 'blue'];
 const MAX_PLAYERS = 6;
 const MIN_PLAYERS = 2;
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
+
+function resolveSocketUrl() {
+  const envUrl = import.meta.env.VITE_SOCKET_URL;
+  if (envUrl) return envUrl;
+
+  const { hostname } = window.location;
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return 'http://localhost:3001';
+  }
+
+  return 'https://uno-duel-api.onrender.com';
+}
+
+const SOCKET_URL = resolveSocketUrl();
 
 /* ============================================
    GAME STATE - CENTRALIZED
