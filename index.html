@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UNO Duel</title>
+  <link rel="stylesheet" href="/src/styles.css" />
+</head>
+<body>
+  <!-- ========== LOBBY STATE (A) ========== -->
+  <div id="lobby-screen" class="screen screen-active">
+    <div class="lobby-container">
+      <div class="lobby-header">
+        <h1 class="game-title">🎴 UNO DUEL</h1>
+        <p class="game-subtitle">Card Game Multiplayer</p>
+      </div>
+
+      <div class="lobby-content">
+        <!-- PROFILE SECTION -->
+        <div class="profile-section">
+          <h2>Profil Pemain</h2>
+          <div class="profile-input-group">
+            <input
+              id="player-name"
+              type="text"
+              placeholder="Masukkan nama pemain"
+              maxlength="20"
+              value="Pemain"
+              class="input-field"
+            />
+          </div>
+          <div class="avatar-selector">
+            <span class="avatar-label">Avatar:</span>
+            <div class="avatar-options">
+              <button class="avatar-btn active" data-avatar="🧑">🧑</button>
+              <button class="avatar-btn" data-avatar="👨">👨</button>
+              <button class="avatar-btn" data-avatar="👩">👩</button>
+              <button class="avatar-btn" data-avatar="👤">👤</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- MODE SELECTION -->
+        <div class="mode-section">
+          <h2>Pilih Mode Permainan</h2>
+          <div class="mode-buttons">
+            <button id="bot-mode-btn" class="mode-button active" data-mode="bot">
+              <span class="mode-icon">🤖</span>
+              <span class="mode-text">Lawan Bot</span>
+              <span class="mode-desc">Bermain sendiri vs AI</span>
+            </button>
+            <button id="online-mode-btn" class="mode-button" data-mode="online">
+              <span class="mode-icon">👥</span>
+              <span class="mode-text">Online 4-6 Pemain</span>
+              <span class="mode-desc">Multiplayer Real-time</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- BOT MODE SECTION -->
+        <div id="bot-section" class="game-section active">
+          <h2>Lawan Bot</h2>
+          <p class="section-desc">Mainkan UNO melawan Bot AI yang cerdas</p>
+          <button id="start-bot-btn" class="primary-button">Mulai Bermain vs Bot</button>
+        </div>
+
+        <!-- ONLINE MODE SECTION -->
+        <div id="online-section" class="game-section">
+          <h2>Multiplayer Online</h2>
+
+          <div class="online-subsection">
+            <h3>Buat Ruangan Baru</h3>
+            <button id="create-room-btn" class="secondary-button">
+              <span class="button-icon">➕</span> Buat Ruangan
+            </button>
+          </div>
+
+          <div class="or-divider">ATAU</div>
+
+          <div class="online-subsection">
+            <h3>Gabung Ruangan</h3>
+            <div class="join-form">
+              <input
+                id="room-code-input"
+                type="text"
+                placeholder="Masukkan kode room (misal: ABC123)"
+                maxlength="6"
+                class="input-field"
+              />
+              <button id="join-room-btn" class="secondary-button">Gabung</button>
+            </div>
+          </div>
+
+          <div class="status-bar">
+            <span class="status-label">Status:</span>
+            <span id="connection-status" class="status-value">Offline</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== WAITING ROOM STATE (A2) ========== -->
+  <div id="room-screen" class="screen">
+    <div class="room-container">
+      <h2 class="room-title">🚪 Ruang Tunggu</h2>
+      <p class="room-code-label">
+        Kode Room:
+        <strong id="waiting-room-code">------</strong>
+        <button id="copy-code-btn" class="copy-btn" title="Salin kode">📋 Salin</button>
+      </p>
+      <p class="room-note">Bagikan kode ini agar pemain lain bisa bergabung (4-6 pemain).</p>
+
+      <ul id="waiting-players-list" class="waiting-players-list"></ul>
+
+      <p id="waiting-status" class="waiting-status">Menunggu pemain lain...</p>
+
+      <button id="start-game-btn" class="primary-button" disabled>Mulai Game</button>
+      <button id="leave-room-btn" class="secondary-button">Keluar Ruangan</button>
+    </div>
+  </div>
+
+  <!-- ========== GAMEPLAY STATE (B) ========== -->
+  <div id="gameplay-screen" class="screen">
+    <div class="gameplay-container">
+      <!-- HEADER -->
+      <header class="gameplay-header">
+        <div class="header-left">
+          <h1 class="game-title-small">UNO DUEL</h1>
+          <span class="room-info" id="room-info-display"></span>
+        </div>
+        <div class="header-right">
+          <button id="exit-game-btn" class="exit-button" title="Keluar Game">✕ Keluar</button>
+        </div>
+      </header>
+
+      <!-- MAIN TABLE -->
+      <main class="gameplay-main">
+        <!-- CENTER: DRAW + DISCARD PILES -->
+        <div class="table-center">
+          <div class="deck-area">
+            <button id="draw-pile" class="deck-card deck-back" title="Ambil Kartu">
+              <span class="deck-label">🂠</span>
+              <span class="deck-count" id="deck-count">0</span>
+            </button>
+            <div id="discard-pile" class="deck-card deck-display"></div>
+          </div>
+        </div>
+
+        <!-- SEATS: RENDERED BY JS AROUND THE TABLE -->
+        <div id="table-seats" class="table-seats"></div>
+      </main>
+
+      <!-- RIGHT SIDEBAR: ALL STATUS / ACTIONS -->
+      <aside class="gameplay-sidebar">
+        <div class="sidebar-box status-box">
+          <p class="box-label">STATUS</p>
+          <div class="status-content" id="status-content">Mempersiapkan...</div>
+        </div>
+
+        <div class="sidebar-box actions-box">
+          <button id="draw-btn" class="action-button primary" title="Ambil 1 kartu dari tumpukan">
+            <span class="button-label">Ambil Kartu</span>
+          </button>
+          <button id="pass-btn" class="action-button" title="Lewati giliran">
+            <span class="button-label">Pass</span>
+          </button>
+          <button id="uno-btn" class="action-button warning hidden" title="Tekan saat punya 1 kartu">
+            <span class="button-label">UNO!</span>
+          </button>
+          <button id="new-round-btn" class="action-button" title="Mulai ronde baru">
+            <span class="button-label">Ronde Baru</span>
+          </button>
+        </div>
+
+        <!-- COLOR PICKER (shown for Wild / +4) -->
+        <div id="color-picker" class="sidebar-box color-picker-box hidden">
+          <p class="box-label">Pilih Warna</p>
+          <div class="color-options">
+            <button class="color-button red-btn" data-color="red" title="Merah">🔴</button>
+            <button class="color-button yellow-btn" data-color="yellow" title="Kuning">🟡</button>
+            <button class="color-button green-btn" data-color="green" title="Hijau">🟢</button>
+            <button class="color-button blue-btn" data-color="blue" title="Biru">🔵</button>
+          </div>
+        </div>
+
+        <div class="sidebar-box log-box">
+          <p class="box-label">Log Permainan</p>
+          <ul class="game-log" id="game-log" aria-live="polite"></ul>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATIONS -->
+  <div id="toast" class="toast hidden" aria-live="polite" role="status"></div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
