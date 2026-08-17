@@ -132,7 +132,8 @@
           <span class="room-info" id="room-info-display"></span>
         </div>
         <div class="header-right">
-          <button id="exit-game-btn" class="exit-button" title="Keluar Game">✕ Keluar</button>
+          <button id="new-round-btn" class="header-icon-btn" title="Mulai Ronde Baru">🔄 Ronde Baru</button>
+          <button id="settings-btn" class="header-icon-btn" title="Pengaturan">⚙️</button>
         </div>
       </header>
 
@@ -149,60 +150,88 @@
           </div>
         </div>
 
-        <!-- SEATS: RENDERED BY JS AROUND THE TABLE -->
+        <!-- OPPONENT SEATS: RENDERED BY JS -->
         <div id="table-seats" class="table-seats"></div>
-      </main>
 
-      <!-- RIGHT SIDEBAR: ALL STATUS / ACTIONS -->
-      <aside class="gameplay-sidebar">
-        <div class="sidebar-box status-box">
-          <p class="box-label">STATUS</p>
-          <div class="status-content" id="status-content">Mempersiapkan...</div>
-        </div>
-
-        <div class="sidebar-box actions-box">
-          <button id="draw-btn" class="action-button primary" title="Ambil 1 kartu dari tumpukan">
-            <span class="button-label">Ambil Kartu</span>
-          </button>
-          <button id="pass-btn" class="action-button" title="Lewati giliran">
-            <span class="button-label">Pass</span>
-          </button>
-          <button id="uno-btn" class="action-button warning hidden" title="Tekan saat punya 1 kartu">
-            <span class="button-label">UNO!</span>
-          </button>
-          <button id="new-round-btn" class="action-button" title="Mulai ronde baru">
-            <span class="button-label">Ronde Baru</span>
-          </button>
-        </div>
-
-        <!-- COLOR PICKER (shown for Wild / +4) -->
-        <div id="color-picker" class="sidebar-box color-picker-box hidden">
-          <p class="box-label">Pilih Warna</p>
-          <div class="color-options">
-            <button class="color-button color-red" data-color="red" title="Merah">
-              <span class="color-swatch"></span>
-              <span class="color-name">Merah</span>
-            </button>
-            <button class="color-button color-yellow" data-color="yellow" title="Kuning">
-              <span class="color-swatch"></span>
-              <span class="color-name">Kuning</span>
-            </button>
-            <button class="color-button color-green" data-color="green" title="Hijau">
-              <span class="color-swatch"></span>
-              <span class="color-name">Hijau</span>
-            </button>
-            <button class="color-button color-blue" data-color="blue" title="Biru">
-              <span class="color-swatch"></span>
-              <span class="color-name">Biru</span>
-            </button>
+        <!-- PLAYER DOCK: hand + pass button -->
+        <div id="player-dock" class="player-dock">
+          <div class="player-dock-header" id="player-dock-header"></div>
+          <div id="my-hand" class="my-hand"></div>
+          <div class="dock-actions">
+            <button id="pass-btn" class="pass-button" title="Lewati giliran">Pass</button>
+            <button id="uno-btn" class="uno-button hidden" title="Tekan saat punya 1 kartu">UNO!</button>
           </div>
         </div>
 
-        <div class="sidebar-box log-box">
-          <p class="box-label">Log Permainan</p>
-          <ul class="game-log" id="game-log" aria-live="polite"></ul>
+        <!-- FLOATING STATUS PILL (minimal) -->
+        <div id="status-pill" class="status-pill">Mempersiapkan...</div>
+
+        <!-- POP-UP PICKER WARNA (Wild / +4) -->
+        <div id="color-picker" class="color-picker-modal hidden">
+          <div class="color-picker-card">
+            <p class="color-picker-title">🎨 Pilih Warna</p>
+            <div class="color-options">
+              <button class="color-button color-red" data-color="red" title="Merah">
+                <span class="color-swatch"></span>
+                <span class="color-name">Merah</span>
+              </button>
+              <button class="color-button color-yellow" data-color="yellow" title="Kuning">
+                <span class="color-swatch"></span>
+                <span class="color-name">Kuning</span>
+              </button>
+              <button class="color-button color-green" data-color="green" title="Hijau">
+                <span class="color-swatch"></span>
+                <span class="color-name">Hijau</span>
+              </button>
+              <button class="color-button color-blue" data-color="blue" title="Biru">
+                <span class="color-swatch"></span>
+                <span class="color-name">Biru</span>
+              </button>
+            </div>
+          </div>
         </div>
-      </aside>
+
+        <!-- SETTINGS MODAL -->
+        <div id="settings-modal" class="settings-modal hidden">
+          <div class="settings-card">
+            <div class="settings-header">
+              <span>⚙️ Pengaturan</span>
+              <button id="settings-close-btn" class="settings-close-btn" title="Tutup">✕</button>
+            </div>
+            <div class="settings-body">
+              <div class="settings-row">
+                <span class="settings-row-label">🔊 Suara</span>
+                <button id="sound-toggle-btn" class="toggle-btn">ON</button>
+              </div>
+              <button id="exit-game-btn" class="exit-match-btn" title="Kembali ke menu utama">🚪 Keluar Match</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- CHAT & EMOTE PANEL (left-middle) -->
+        <div id="chat-panel" class="chat-panel">
+          <div class="chat-header">
+            <span>💬 Chat &amp; Emote</span>
+            <button id="chat-toggle-btn" class="chat-toggle-btn" title="Sembunyikan panel">Hide</button>
+          </div>
+          <div id="chat-messages" class="chat-messages" aria-live="polite"></div>
+          <div class="chat-input-row">
+            <input
+              id="chat-input"
+              type="text"
+              placeholder="Ketik pesan..."
+              maxlength="120"
+              class="chat-input"
+            />
+            <button id="chat-send-btn" class="chat-send-btn" title="Kirim">➤</button>
+          </div>
+          <div class="chat-emote-row">
+            <button id="emote-toggle-btn" class="emote-toggle-btn" title="Pilih Emote">😊 Emote</button>
+            <div id="emote-grid" class="emote-grid hidden"></div>
+          </div>
+        </div>
+        <button id="chat-show-btn" class="chat-show-btn hidden" title="Tampilkan Chat">💬</button>
+      </main>
     </div>
   </div>
 

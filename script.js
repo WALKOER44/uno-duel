@@ -1,6 +1,8 @@
 /* ============================================
    UNO DUEL - P2P MULTIPLAYER (PeerJS)
    Frontend only. No backend / WebSocket server.
+   Redesign: clean minimal UI, floating pop-ups,
+   chat & emote panel, settings menu.
    ============================================ */
 
 /* ============================================
@@ -11,6 +13,33 @@ const COLORS = ['red', 'yellow', 'green', 'blue'];
 const MAX_PLAYERS = 6;
 const MIN_PLAYERS = 2;
 const PEER_PREFIX = 'uno-duel-';
+
+const EMOTES = [
+  { e: '😄', s: 'cheer' },
+  { e: '😂', s: 'laugh' },
+  { e: '😎', s: 'cool' },
+  { e: '🎉', s: 'party' },
+  { e: '🥳', s: 'party' },
+  { e: '😱', s: 'shock' },
+  { e: '🤯', s: 'shock' },
+  { e: '😤', s: 'angry' },
+  { e: '😭', s: 'sad' },
+  { e: '💀', s: 'sad' },
+  { e: '🔥', s: 'fire' },
+  { e: '👏', s: 'applause' },
+  { e: '👍', s: 'cheer' },
+  { e: '👎', s: 'sad' },
+  { e: '❤️', s: 'love' },
+  { e: '🃏', s: 'fanfare' },
+  { e: '🎯', s: 'cool' },
+  { e: '💪', s: 'power' },
+  { e: '🎺', s: 'fanfare' },
+  { e: '🤔', s: 'thinking' },
+  { e: '🙌', s: 'applause' },
+  { e: '😇', s: 'cheer' },
+  { e: '🤗', s: 'love' },
+  { e: '😴', s: 'sad' }
+];
 
 /* ============================================
    DECK LOGIC
@@ -89,7 +118,9 @@ function getCardSymbol(card) {
 
 function cardColorClass(card) {
   if (!card) return 'wild';
-  return card.color === 'wild' ? 'wild' : card.displayColor || card.color;
+  const dc = card.displayColor;
+  if (dc && dc !== 'wild') return dc;
+  return card.color;
 }
 
 function cardFace(card) {
@@ -117,6 +148,8 @@ const gameState = {
     name: 'Pemain',
     avatar: '🧑'
   },
+
+  soundEnabled: true,
 
   // P2P STATE
   peer: null,
@@ -168,20 +201,38 @@ const DOM = {
   startGameBtn: document.getElementById('start-game-btn'),
   leaveRoomBtn: document.getElementById('leave-room-btn'),
 
-  exitGameBtn: document.getElementById('exit-game-btn'),
   roomInfoDisplay: document.getElementById('room-info-display'),
   tableSeats: document.getElementById('table-seats'),
   discardPile: document.getElementById('discard-pile'),
   drawPile: document.getElementById('draw-pile'),
   deckCount: document.getElementById('deck-count'),
-  statusContent: document.getElementById('status-content'),
-  gameLog: document.getElementById('game-log'),
-  drawBtn: document.getElementById('draw-btn'),
+
+  playerDock: document.getElementById('player-dock'),
+  playerDockHeader: document.getElementById('player-dock-header'),
+  myHand: document.getElementById('my-hand'),
   passBtn: document.getElementById('pass-btn'),
   unoBtn: document.getElementById('uno-btn'),
+
+  statusPill: document.getElementById('status-pill'),
   newRoundBtn: document.getElementById('new-round-btn'),
+  settingsBtn: document.getElementById('settings-btn'),
+  settingsModal: document.getElementById('settings-modal'),
+  settingsCloseBtn: document.getElementById('settings-close-btn'),
+  soundToggleBtn: document.getElementById('sound-toggle-btn'),
+  exitGameBtn: document.getElementById('exit-game-btn'),
+
   colorPicker: document.getElementById('color-picker'),
   colorButtons: [...document.querySelectorAll('.color-button')],
+
+  chatPanel: document.getElementById('chat-panel'),
+  chatToggleBtn: document.getElementById('chat-toggle-btn'),
+  chatShowBtn: document.getElementById('chat-show-btn'),
+  chatMessages: document.getElementById('chat-messages'),
+  chatInput: document.getElementById('chat-input'),
+  chatSendBtn: document.getElementById('chat-send-btn'),
+  emoteToggleBtn: document.getElementById('emote-toggle-btn'),
+  emoteGrid: document.getElementById('emote-grid'),
+
   toast: document.getElementById('toast')
 };
 
@@ -215,40 +266,13 @@ function showToast(message) {
   }, 2200);
 }
 
-function addLog(message) {
-  gameState.log.unshift(message);
-  const html = gameState.log.slice(0, 10).map((msg) => `<li>${msg}</li>`).join('');
-  DOM.gameLog.innerHTML = html;
-}
-
-function playSound(type = 'click') {
-  const AudioCtx = window.AudioContext || window.webkitAudioContext;
-  if (!AudioCtx) return;
-  try {
-    const ctx = new AudioCtx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    const sounds = {
-      click: { freq: 520, dur: 0.08, type: 'triangle' },
-      draw: { freq: 300, dur: 0.12, type: 'sawtooth' },
-      win: { freq: 720, dur: 0.25, type: 'square' },
-      action: { freq: 440, dur: 0.11, type: 'sine' }
-    };
-    const s = sounds[type] || sounds.click;
-    osc.type = s.type;
-    osc.frequency.value = s.freq;
-    gain.gain.value = 0.03;
-    osc.start();
-    setTimeout(() => {
-      osc.stop();
-      ctx.close();
-    }, s.dur * 1000);
-  } catch (e) {
-    // Silent fail
-  }
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function randomCode() {
@@ -262,6 +286,242 @@ function randomCode() {
 
 function setConnectionStatus(text) {
   DOM.connectionStatus.textContent = text;
+}
+
+/* ============================================
+   AUDIO / SOUND ENGINE
+   ============================================ */
+
+let _audioCtx = null;
+
+function getAudioCtx() {
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) return null;
+  if (!_audioCtx) _audioCtx = new Ctx();
+  if (_audioCtx.state === 'suspended') {
+    try {
+      _audioCtx.resume();
+    } catch (e) {
+      // ignore
+    }
+  }
+  return _audioCtx;
+}
+
+function tone(ctx, dest, freq, start, dur, type) {
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  g.gain.setValueAtTime(0.0001, start);
+  g.gain.exponentialRampToValueAtTime(0.9, start + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+  osc.connect(g);
+  g.connect(dest);
+  osc.start(start);
+  osc.stop(start + dur + 0.02);
+}
+
+function noiseBurst(ctx, dest, start, dur) {
+  const len = Math.floor(ctx.sampleRate * dur);
+  const buffer = ctx.createBuffer(1, len, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < len; i += 1) {
+    data[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  }
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  src.connect(dest);
+  src.start(start);
+}
+
+function playSound(type = 'click') {
+  if (!gameState.soundEnabled) return;
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  const master = ctx.createGain();
+  master.gain.value = 0.08;
+  master.connect(ctx.destination);
+
+  const sounds = {
+    click: { freq: 520, dur: 0.08, type: 'triangle' },
+    draw: { freq: 300, dur: 0.12, type: 'sawtooth' },
+    win: { freq: 720, dur: 0.25, type: 'square' },
+    action: { freq: 440, dur: 0.11, type: 'sine' }
+  };
+  const s = sounds[type] || sounds.click;
+  tone(ctx, master, s.freq, now, s.dur, s.type);
+}
+
+function emoteSoundOf(emote) {
+  const found = EMOTES.find((m) => m.e === emote);
+  return found ? found.s : 'cheer';
+}
+
+function playEmoteSound(name) {
+  if (!gameState.soundEnabled) return;
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  const master = ctx.createGain();
+  master.gain.value = 0.12;
+  master.connect(ctx.destination);
+
+  switch (name) {
+    case 'cheer':
+      [523, 659, 784, 1046].forEach((f, i) => tone(ctx, master, f, now + i * 0.09, 0.15, 'triangle'));
+      break;
+    case 'laugh':
+      tone(ctx, master, 440, now, 0.12, 'square');
+      tone(ctx, master, 392, now + 0.12, 0.12, 'square');
+      tone(ctx, master, 349, now + 0.24, 0.18, 'square');
+      break;
+    case 'cool':
+      tone(ctx, master, 392, now, 0.1, 'sine');
+      tone(ctx, master, 523, now + 0.1, 0.15, 'sine');
+      break;
+    case 'party':
+      tone(ctx, master, 659, now, 0.1, 'triangle');
+      tone(ctx, master, 523, now + 0.1, 0.1, 'triangle');
+      tone(ctx, master, 784, now + 0.2, 0.1, 'triangle');
+      tone(ctx, master, 1046, now + 0.3, 0.2, 'triangle');
+      break;
+    case 'shock':
+      tone(ctx, master, 880, now, 0.15, 'sawtooth');
+      tone(ctx, master, 660, now + 0.12, 0.15, 'sawtooth');
+      tone(ctx, master, 440, now + 0.24, 0.25, 'sawtooth');
+      break;
+    case 'angry':
+      tone(ctx, master, 220, now, 0.15, 'square');
+      tone(ctx, master, 233, now + 0.15, 0.15, 'square');
+      tone(ctx, master, 220, now + 0.3, 0.3, 'sawtooth');
+      break;
+    case 'sad':
+      tone(ctx, master, 330, now, 0.3, 'sawtooth');
+      tone(ctx, master, 311, now + 0.25, 0.3, 'sawtooth');
+      tone(ctx, master, 293, now + 0.5, 0.5, 'sawtooth');
+      break;
+    case 'fire':
+      tone(ctx, master, 180, now, 0.2, 'sawtooth');
+      tone(ctx, master, 220, now + 0.1, 0.25, 'sawtooth');
+      tone(ctx, master, 262, now + 0.25, 0.3, 'sawtooth');
+      break;
+    case 'applause':
+      noiseBurst(ctx, master, now, 0.4);
+      break;
+    case 'love':
+      tone(ctx, master, 523, now, 0.15, 'triangle');
+      tone(ctx, master, 659, now + 0.12, 0.15, 'triangle');
+      tone(ctx, master, 784, now + 0.24, 0.25, 'triangle');
+      break;
+    case 'fanfare':
+      tone(ctx, master, 587, now, 0.12, 'square');
+      tone(ctx, master, 587, now + 0.12, 0.12, 'square');
+      tone(ctx, master, 587, now + 0.24, 0.3, 'square');
+      tone(ctx, master, 880, now + 0.24, 0.35, 'triangle');
+      break;
+    case 'power':
+      tone(ctx, master, 130, now, 0.25, 'sawtooth');
+      tone(ctx, master, 164, now + 0.2, 0.25, 'sawtooth');
+      tone(ctx, master, 196, now + 0.4, 0.35, 'sawtooth');
+      break;
+    case 'thinking':
+      tone(ctx, master, 523, now, 0.1, 'sine');
+      tone(ctx, master, 587, now + 0.12, 0.1, 'sine');
+      tone(ctx, master, 659, now + 0.24, 0.12, 'sine');
+      break;
+    default:
+      tone(ctx, master, 523, now, 0.12, 'triangle');
+  }
+}
+
+/* ============================================
+   CHAT & EMOTE
+   ============================================ */
+
+function appendChat(msg) {
+  const el = document.createElement('div');
+
+  if (msg.kind === 'system') {
+    el.className = 'chat-system';
+    el.textContent = msg.text;
+  } else if (msg.kind === 'emote') {
+    el.className = 'chat-msg chat-emote';
+    el.innerHTML = `
+      <span class="chat-avatar">${escapeHtml(msg.avatar || '👤')}</span>
+      <span class="chat-name">${escapeHtml(msg.from)}</span>
+      <span class="chat-emote-symbol">${escapeHtml(msg.emote)}</span>
+    `;
+  } else {
+    el.className = 'chat-msg';
+    el.innerHTML = `
+      <span class="chat-avatar">${escapeHtml(msg.avatar || '👤')}</span>
+      <span class="chat-name">${escapeHtml(msg.from)}</span>
+      <span class="chat-text">${escapeHtml(msg.text)}</span>
+    `;
+  }
+
+  DOM.chatMessages.appendChild(el);
+  DOM.chatMessages.scrollTop = DOM.chatMessages.scrollHeight;
+}
+
+function sendChatMessage(text) {
+  const msg = (text || '').trim();
+  if (!msg) return;
+  const me = myPlayer();
+
+  if (gameState.isOnline) {
+    if (gameState.isHost) {
+      broadcastChat({ from: me.name, avatar: me.avatar, text: msg });
+    } else if (gameState.conn && gameState.conn.open) {
+      gameState.conn.send({ type: 'chat', text: msg });
+    }
+  } else {
+    appendChat({ kind: 'msg', avatar: me.avatar, from: me.name, text: msg });
+    botReactToChat();
+  }
+}
+
+function sendEmote(emote, sound) {
+  playEmoteSound(sound || emoteSoundOf(emote));
+  const me = myPlayer();
+
+  if (gameState.isOnline) {
+    if (gameState.isHost) {
+      broadcastChat({ from: me.name, avatar: me.avatar, emote });
+    } else if (gameState.conn && gameState.conn.open) {
+      gameState.conn.send({ type: 'chat', emote });
+    }
+  } else {
+    appendChat({ kind: 'emote', avatar: me.avatar, from: me.name, emote });
+    botReactToChat();
+  }
+}
+
+function broadcastChat(msg) {
+  gameState.players.forEach((p) => {
+    if (p.isMe) {
+      appendChat({ ...msg, kind: msg.emote ? 'emote' : 'msg' });
+    } else if (p.conn && p.conn.open) {
+      p.conn.send({ type: 'chat', from: msg.from, avatar: msg.avatar, text: msg.text, emote: msg.emote });
+    }
+  });
+}
+
+function botReactToChat() {
+  if (gameState.isOnline) return;
+  const bot = gameState.players.find((p) => p.isBot);
+  if (!bot) return;
+  if (Math.random() > 0.6) return;
+
+  const delay = 500 + Math.random() * 1200;
+  setTimeout(() => {
+    if (gameState.screenState !== 'gameplay' || gameState.winner) return;
+    const emote = EMOTES[Math.floor(Math.random() * EMOTES.length)];
+    appendChat({ kind: 'emote', avatar: '🤖', from: bot.name, emote: emote.e });
+    playEmoteSound(emote.s);
+  }, delay);
 }
 
 /* ============================================
@@ -617,6 +877,14 @@ function handleHostMessage(conn, data) {
       break;
     }
 
+    case 'chat': {
+      const player = gameState.players.find((p) => p.id === conn.peer);
+      if (!player) return;
+      broadcastChat({ from: player.name, avatar: player.avatar, text: data.text, emote: data.emote });
+      if (data.emote) playEmoteSound(emoteSoundOf(data.emote));
+      break;
+    }
+
     case 'playCard': {
       const idx = gameState.players.findIndex((p) => p.id === conn.peer);
       if (idx === -1 || idx !== gameState.currentPlayer) return;
@@ -717,7 +985,6 @@ function startOnlineGame() {
     first = gameState.deck.pop();
   }
 
-  gameState.deck = gameState.deck;
   gameState.deckCount = gameState.deck.length;
   gameState.discard = [first || { color: 'red', value: '0' }];
   gameState.currentPlayer = 0;
@@ -728,6 +995,7 @@ function startOnlineGame() {
   gameState.log = [];
 
   DOM.colorPicker.classList.add('hidden');
+  DOM.chatMessages.innerHTML = '';
   addLog('🃏 Ronde dimulai!');
   broadcastState();
 }
@@ -803,6 +1071,16 @@ function handleClientData(data) {
       break;
     }
 
+    case 'chat': {
+      if (data.emote) {
+        appendChat({ kind: 'emote', avatar: data.avatar, from: data.from, emote: data.emote });
+        playEmoteSound(emoteSoundOf(data.emote));
+      } else {
+        appendChat({ kind: 'msg', avatar: data.avatar, from: data.from, text: data.text });
+      }
+      break;
+    }
+
     case 'toast':
       showToast(data.message);
       break;
@@ -849,6 +1127,7 @@ function leaveGame() {
   }
   gameState.conn = null;
   DOM.colorPicker.classList.add('hidden');
+  closeSettings();
   resetOnlineState();
   setConnectionStatus('Offline');
   showScreen('lobby');
@@ -922,6 +1201,7 @@ function resetLocalGame() {
   gameState.log = [];
 
   DOM.colorPicker.classList.add('hidden');
+  DOM.chatMessages.innerHTML = '';
   addLog('🃏 Ronde dimulai!');
   renderGameplay();
 }
@@ -1002,15 +1282,6 @@ function renderWaitingRoom(payload) {
    ============================================ */
 
 function positionSeat(seat, idx, meIdx, total) {
-  if (idx === meIdx) {
-    seat.style.left = '0';
-    seat.style.right = '0';
-    seat.style.bottom = '6px';
-    seat.style.top = 'auto';
-    seat.style.transform = 'none';
-    return;
-  }
-
   const others = total - 1;
   const oppIndices = [];
   for (let i = 0; i < total; i += 1) {
@@ -1020,7 +1291,7 @@ function positionSeat(seat, idx, meIdx, total) {
 
   let x;
   let y;
-  if (others === 1) {
+  if (others <= 1) {
     x = 50;
     y = 9;
   } else {
@@ -1042,51 +1313,61 @@ function renderSeats() {
 
   const total = gameState.players.length;
   const meIdx = myIndex();
-  const meAvatar = gameState.playerProfile.avatar || '🧑';
 
   gameState.players.forEach((player, idx) => {
-    const seat = document.createElement('div');
-    seat.className = 'seat';
+    if (idx === meIdx) return;
 
-    if (idx === meIdx) {
-      seat.classList.add('seat-me');
-      const handLen = (player.hand || []).length;
-      seat.innerHTML = `
-        <div class="seat-name-row">
-          <span class="seat-avatar">${player.avatar || meAvatar}</span>
-          <span class="seat-name">${player.name}</span>
-          <span class="card-count">${handLen}</span>
-        </div>
-        <div class="my-hand"></div>
-      `;
-      const handEl = seat.querySelector('.my-hand');
-      handEl.innerHTML = (player.hand || [])
-        .map((card, ci) => cardButtonHTML(card, ci, isMyTurn() && isValidMove(card, topCard())))
-        .join('');
-      if (handEl.scrollWidth > handEl.clientWidth) {
-        handEl.scrollLeft = handEl.scrollWidth;
-      }
-    } else {
-      seat.classList.add('seat-opponent');
-      const count = opponentHandCount(player);
-      const avatar = player.avatar || (gameState.isOnline ? '👤' : '🤖');
-      const shown = Math.max(1, Math.min(count, 6));
-      const cardsHTML = Array.from({ length: shown }, () =>
-        '<span class="uno-card back-card">🂠</span>'
-      ).join('') + (count > shown ? `<span class="stack-more">+${count - shown}</span>` : '');
-      seat.innerHTML = `
-        <div class="seat-name-row">
-          <span class="seat-avatar">${avatar}</span>
-          <span class="seat-name">${player.name}</span>
-          <span class="card-count">${count}</span>
-        </div>
-        <div class="opponent-stack">${cardsHTML}</div>
-      `;
-    }
+    const seat = document.createElement('div');
+    seat.className = 'seat seat-opponent';
+
+    const count = opponentHandCount(player);
+    const avatar = player.avatar || (gameState.isOnline ? '👤' : '🤖');
+    const shown = Math.max(1, Math.min(count, 6));
+    const cardsHTML = Array.from({ length: shown }, () =>
+      '<span class="uno-card back-card">🂠</span>'
+    ).join('') + (count > shown ? `<span class="stack-more">+${count - shown}</span>` : '');
+    seat.innerHTML = `
+      <div class="seat-name-row">
+        <span class="seat-avatar">${avatar}</span>
+        <span class="seat-name">${player.name}</span>
+        <span class="card-count">${count}</span>
+      </div>
+      <div class="opponent-stack">${cardsHTML}</div>
+    `;
 
     positionSeat(seat, idx, meIdx, total);
     container.appendChild(seat);
   });
+}
+
+function renderPlayerDock() {
+  const me = myPlayer();
+  if (!me) {
+    DOM.playerDockHeader.innerHTML = '';
+    DOM.myHand.innerHTML = '';
+    return;
+  }
+
+  const hand = me.hand || [];
+  const isTurn = isMyTurn() && !gameState.winner;
+  const turnBadge = isTurn ? '<span class="turn-badge">● Giliran Kamu</span>' : '';
+
+  DOM.playerDockHeader.innerHTML = `
+    <span class="seat-avatar">${me.avatar || '🧑'}</span>
+    <span class="seat-name">${me.name}</span>
+    <span class="card-count">${hand.length}</span>
+    ${turnBadge}
+  `;
+
+  DOM.myHand.innerHTML = hand
+    .map((card, ci) => cardButtonHTML(card, ci, isTurn && isValidMove(card, topCard())))
+    .join('');
+
+  DOM.playerDock.classList.toggle('dock-active', isTurn);
+
+  if (DOM.myHand.scrollWidth > DOM.myHand.clientWidth) {
+    DOM.myHand.scrollLeft = DOM.myHand.scrollWidth;
+  }
 }
 
 function renderDiscard() {
@@ -1103,22 +1384,29 @@ function renderDeckCount() {
 }
 
 function updateStatus() {
+  const pill = DOM.statusPill;
+  if (!pill) return;
+
   if (gameState.winner) {
-    DOM.statusContent.textContent = `🏆 ${gameState.winner.name} menang!`;
+    pill.textContent = `🏆 ${gameState.winner.name} menang!`;
+    pill.classList.add('winner');
     return;
   }
   if (!gameState.players.length || !gameState.players[gameState.currentPlayer]) {
-    DOM.statusContent.textContent = 'Mempersiapkan...';
+    pill.textContent = 'Mempersiapkan...';
+    pill.classList.remove('winner');
     return;
   }
   const current = gameState.players[gameState.currentPlayer];
   const you = isMyTurn();
   const dirArrow = gameState.direction === 1 ? '↻' : '↺';
-  DOM.statusContent.textContent = `Giliran: ${current.name}${you ? ' (Kamu)' : ''} • Arah ${dirArrow}`;
+  pill.textContent = `Giliran: ${current.name}${you ? ' (Kamu)' : ''} • ${dirArrow}`;
+  pill.classList.remove('winner');
 }
 
 function renderGameplay() {
   renderSeats();
+  renderPlayerDock();
   renderDiscard();
   renderDeckCount();
   updateStatus();
@@ -1126,7 +1414,6 @@ function renderGameplay() {
   const me = myPlayer();
   const unoVisible = me && me.hand.length === 1 && !me.hasUno && !gameState.winner;
   DOM.unoBtn.classList.toggle('hidden', !unoVisible);
-  DOM.drawBtn.disabled = !isMyTurn();
   DOM.passBtn.disabled = gameState.isOnline || !isMyTurn();
 }
 
@@ -1148,6 +1435,16 @@ function drawAction() {
   } else {
     drawLocal();
   }
+}
+
+/* ============================================
+   GAME LOG -> CHAT FEED
+   ============================================ */
+
+function addLog(message) {
+  gameState.log.unshift(message);
+  if (gameState.log.length > 40) gameState.log.pop();
+  appendChat({ kind: 'system', text: message });
 }
 
 /* ============================================
@@ -1237,11 +1534,58 @@ DOM.leaveRoomBtn.addEventListener('click', () => {
    EVENT HANDLERS - GAMEPLAY
    ============================================ */
 
+// Header: new round & settings
+DOM.newRoundBtn.addEventListener('click', () => {
+  if (gameState.isOnline) {
+    if (gameState.isHost) {
+      startOnlineGame();
+    } else {
+      showToast('Ronde baru hanya bisa dimulai host');
+    }
+    return;
+  }
+  resetLocalGame();
+});
+
+DOM.settingsBtn.addEventListener('click', () => {
+  openSettings();
+});
+
+// Settings modal
+function openSettings() {
+  DOM.settingsModal.classList.remove('hidden');
+  DOM.soundToggleBtn.classList.toggle('on', gameState.soundEnabled);
+  DOM.soundToggleBtn.textContent = gameState.soundEnabled ? 'ON' : 'OFF';
+}
+
+function closeSettings() {
+  DOM.settingsModal.classList.add('hidden');
+}
+
+DOM.settingsCloseBtn.addEventListener('click', closeSettings);
+
+DOM.settingsModal.addEventListener('click', (e) => {
+  if (e.target === DOM.settingsModal) closeSettings();
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeSettings();
+});
+
+DOM.soundToggleBtn.addEventListener('click', () => {
+  gameState.soundEnabled = !gameState.soundEnabled;
+  DOM.soundToggleBtn.classList.toggle('on', gameState.soundEnabled);
+  DOM.soundToggleBtn.textContent = gameState.soundEnabled ? 'ON' : 'OFF';
+  if (gameState.soundEnabled) playSound('click');
+});
+
 DOM.exitGameBtn.addEventListener('click', () => {
+  closeSettings();
   leaveGame();
 });
 
-DOM.tableSeats.addEventListener('click', (e) => {
+// Play my cards
+DOM.myHand.addEventListener('click', (e) => {
   if (gameState.screenState !== 'gameplay' || gameState.winner || !isMyTurn()) return;
 
   const cardBtn = e.target.closest('.uno-card[data-index]');
@@ -1264,16 +1608,13 @@ DOM.tableSeats.addEventListener('click', (e) => {
   playMyCard(idx);
 });
 
+// Draw pile
 DOM.drawPile.addEventListener('click', () => {
   if (gameState.screenState !== 'gameplay' || gameState.winner || !isMyTurn()) return;
   drawAction();
 });
 
-DOM.drawBtn.addEventListener('click', () => {
-  if (gameState.screenState !== 'gameplay' || gameState.winner || !isMyTurn()) return;
-  drawAction();
-});
-
+// Pass
 DOM.passBtn.addEventListener('click', () => {
   if (gameState.isOnline || gameState.winner || !isMyTurn()) return;
   addLog('⏭ Pass');
@@ -1285,6 +1626,7 @@ DOM.passBtn.addEventListener('click', () => {
   }
 });
 
+// UNO!
 DOM.unoBtn.addEventListener('click', () => {
   const me = myPlayer();
   if (!me || me.hand.length !== 1) return;
@@ -1300,18 +1642,7 @@ DOM.unoBtn.addEventListener('click', () => {
   }
 });
 
-DOM.newRoundBtn.addEventListener('click', () => {
-  if (gameState.isOnline) {
-    if (gameState.isHost) {
-      startOnlineGame();
-    } else {
-      showToast('Ronde baru hanya bisa dimulai host');
-    }
-    return;
-  }
-  resetLocalGame();
-});
-
+// Color picker pop-up (Wild / +4)
 DOM.colorButtons.forEach((btn) => {
   btn.addEventListener('click', () => {
     if (gameState.pendingWild === null) return;
@@ -1329,6 +1660,56 @@ DOM.colorButtons.forEach((btn) => {
   });
 });
 
+DOM.colorPicker.addEventListener('click', (e) => {
+  if (e.target === DOM.colorPicker) {
+    gameState.pendingWild = null;
+    DOM.colorPicker.classList.add('hidden');
+  }
+});
+
+/* ============================================
+   EVENT HANDLERS - CHAT & EMOTE
+   ============================================ */
+
+DOM.chatToggleBtn.addEventListener('click', () => {
+  DOM.chatPanel.classList.add('hidden');
+  DOM.chatShowBtn.classList.remove('hidden');
+});
+
+DOM.chatShowBtn.addEventListener('click', () => {
+  DOM.chatPanel.classList.remove('hidden');
+  DOM.chatShowBtn.classList.add('hidden');
+  DOM.chatInput.focus();
+});
+
+DOM.chatSendBtn.addEventListener('click', () => {
+  sendChatMessage(DOM.chatInput.value);
+  DOM.chatInput.value = '';
+});
+
+DOM.chatInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    sendChatMessage(DOM.chatInput.value);
+    DOM.chatInput.value = '';
+  }
+});
+
+DOM.emoteToggleBtn.addEventListener('click', () => {
+  DOM.emoteGrid.classList.toggle('hidden');
+});
+
+function buildEmoteGrid() {
+  DOM.emoteGrid.innerHTML = EMOTES.map((em) =>
+    `<button class="emote-btn" data-emote="${em.e}" data-sound="${em.s}" title="${em.e}">${em.e}</button>`
+  ).join('');
+
+  DOM.emoteGrid.addEventListener('click', (e) => {
+    const btn = e.target.closest('.emote-btn');
+    if (!btn) return;
+    sendEmote(btn.dataset.emote, btn.dataset.sound);
+  });
+}
+
 /* ============================================
    INITIALIZATION
    ============================================ */
@@ -1339,6 +1720,9 @@ function init() {
   DOM.botSection.classList.add('active');
   DOM.playerNameInput.value = gameState.playerProfile.name;
   DOM.avatarBtns[0].classList.add('active');
+  DOM.soundToggleBtn.classList.add('on');
+  DOM.soundToggleBtn.textContent = 'ON';
+  buildEmoteGrid();
 }
 
 init();
