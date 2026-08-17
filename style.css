@@ -1323,6 +1323,13 @@ input[type='text'] {
   z-index: 150;
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
   animation: chatIn 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.chat-panel.closing {
+  opacity: 0;
+  transform: translate(-18px, -50%);
+  pointer-events: none;
 }
 
 .chat-panel.hidden {
@@ -1475,6 +1482,30 @@ input[type='text'] {
   border-radius: 10px;
   margin-top: 8px;
   animation: fadeIn 0.2s ease;
+  overflow-y: auto;
+  max-height: 176px;
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-accent) rgba(0, 0, 0, 0.25);
+  -webkit-overflow-scrolling: touch;
+}
+
+.emote-grid::-webkit-scrollbar {
+  width: 6px;
+}
+
+.emote-grid::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 3px;
+}
+
+.emote-grid::-webkit-scrollbar-thumb {
+  background: var(--color-accent);
+  border-radius: 3px;
+}
+
+.emote-grid::-webkit-scrollbar-thumb:hover {
+  background: var(--color-accent-hover);
 }
 
 .emote-grid.hidden {

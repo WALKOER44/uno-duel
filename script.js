@@ -1691,8 +1691,12 @@ DOM.colorPicker.addEventListener('click', (e) => {
    ============================================ */
 
 DOM.chatToggleBtn.addEventListener('click', () => {
-  DOM.chatPanel.classList.add('hidden');
-  DOM.chatShowBtn.classList.remove('hidden');
+  DOM.chatPanel.classList.add('closing');
+  setTimeout(() => {
+    DOM.chatPanel.classList.add('hidden');
+    DOM.chatPanel.classList.remove('closing');
+    DOM.chatShowBtn.classList.remove('hidden');
+  }, 250);
 });
 
 DOM.chatShowBtn.addEventListener('click', () => {
@@ -1726,6 +1730,7 @@ function buildEmoteGrid() {
     const btn = e.target.closest('.emote-btn');
     if (!btn) return;
     sendEmote(btn.dataset.emote, btn.dataset.sound);
+    DOM.emoteGrid.classList.add('hidden');
   });
 }
 
