@@ -4,7 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>UNO Duel</title>
-  <link rel="stylesheet" href="/src/styles.css" />
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 </head>
 <body>
   <!-- ========== LOBBY STATE (A) ========== -->
@@ -12,7 +13,7 @@
     <div class="lobby-container">
       <div class="lobby-header">
         <h1 class="game-title">🎴 UNO DUEL</h1>
-        <p class="game-subtitle">Card Game Multiplayer</p>
+        <p class="game-subtitle">Card Game Multiplayer P2P</p>
       </div>
 
       <div class="lobby-content">
@@ -51,8 +52,8 @@
             </button>
             <button id="online-mode-btn" class="mode-button" data-mode="online">
               <span class="mode-icon">👥</span>
-              <span class="mode-text">Online 4-6 Pemain</span>
-              <span class="mode-desc">Multiplayer Real-time</span>
+              <span class="mode-text">Online 2-6 Pemain</span>
+              <span class="mode-desc">Peer-to-Peer (tanpa server)</span>
             </button>
           </div>
         </div>
@@ -66,10 +67,11 @@
 
         <!-- ONLINE MODE SECTION -->
         <div id="online-section" class="game-section">
-          <h2>Multiplayer Online</h2>
+          <h2>Multiplayer Online (P2P)</h2>
 
           <div class="online-subsection">
-            <h3>Buat Ruangan Baru</h3>
+            <h3>Buat Ruangan Baru (Host)</h3>
+            <p class="section-desc">Kamu menjadi host, bagikan kode room ke pemain lain.</p>
             <button id="create-room-btn" class="secondary-button">
               <span class="button-icon">➕</span> Buat Ruangan
             </button>
@@ -84,7 +86,7 @@
                 id="room-code-input"
                 type="text"
                 placeholder="Masukkan kode room (misal: ABC123)"
-                maxlength="6"
+                maxlength="10"
                 class="input-field"
               />
               <button id="join-room-btn" class="secondary-button">Gabung</button>
@@ -109,7 +111,7 @@
         <strong id="waiting-room-code">------</strong>
         <button id="copy-code-btn" class="copy-btn" title="Salin kode">📋 Salin</button>
       </p>
-      <p class="room-note">Bagikan kode ini agar pemain lain bisa bergabung (4-6 pemain).</p>
+      <p class="room-note">Bagikan kode ini agar pemain lain bisa bergabung (2-6 pemain).</p>
 
       <ul id="waiting-players-list" class="waiting-players-list"></ul>
 
@@ -207,6 +209,6 @@
   <!-- TOAST NOTIFICATIONS -->
   <div id="toast" class="toast hidden" aria-live="polite" role="status"></div>
 
-  <script type="module" src="/src/main.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>
