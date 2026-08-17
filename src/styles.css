@@ -773,7 +773,7 @@ input[type='text'] {
   text-align: center;
 }
 
-/* OPPONENT CARD STACK - 1:1 FULL SIZE, HIDDEN FACES */
+/* OPPONENT CARD STACK - PROPORTIONAL HIDDEN FACES */
 .opponent-stack {
   display: flex;
   align-items: center;
@@ -782,37 +782,65 @@ input[type='text'] {
 }
 
 .opponent-stack .uno-card.back-card {
-  width: var(--card-width);
-  height: var(--card-height);
+  width: 42px;
+  height: 62px;
   margin-left: 0;
+  font-size: 1rem;
 }
 
 .opponent-stack .uno-card.back-card:not(:first-child) {
-  margin-left: calc(var(--card-width) * -0.62);
+  margin-left: -12px;
 }
 
-/* MY HAND */
+.stack-more {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--color-amber);
+  background: var(--color-bg-deep);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 2px 7px;
+  margin-left: 4px;
+}
+
+/* MY HAND - HORIZONTAL SCROLL AREA */
 .my-hand {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
   align-items: center;
   gap: 6px;
   width: 100%;
+  max-width: 100%;
+  align-self: stretch;
   min-height: 40px;
+  padding: 10px 14px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
 }
 
-.my-hand.many-cards .uno-card {
-  width: 50px;
-  height: 72px;
+.my-hand .uno-card {
+  flex: 0 0 auto;
 }
 
-.my-hand.many-cards .card-center {
-  font-size: 1.05rem;
+.my-hand::-webkit-scrollbar {
+  height: 8px;
 }
 
-.my-hand.many-cards .card-corner {
-  font-size: 0.6rem;
+.my-hand::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 4px;
+}
+
+.my-hand::-webkit-scrollbar-thumb {
+  background: var(--color-accent);
+  border-radius: 4px;
+}
+
+.my-hand::-webkit-scrollbar-thumb:hover {
+  background: var(--color-accent-hover);
 }
 
 /* ============================================
@@ -1293,11 +1321,6 @@ input[type='text'] {
 
   .seat-name {
     max-width: 70px;
-  }
-
-  .my-hand.many-cards .uno-card {
-    width: 42px;
-    height: 62px;
   }
 
   .game-log {

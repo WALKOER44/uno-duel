@@ -19,7 +19,7 @@ const gameState = {
   gameMode: 'bot', // 'bot' | 'online'
   playerProfile: {
     name: 'Pemain',
-    avatar: 'ðŸ§‘'
+    avatar: '🧑'
   },
 
   // ONLINE STATE
@@ -166,10 +166,10 @@ function addLog(message) {
    ============================================ */
 
 function getCardSymbol(card) {
-  if (card.value === 'reverse') return 'ðŸ”„';
-  if (card.value === 'skip') return 'ðŸš«';
-  if (card.value === 'draw2') return 'ðŸƒ';
-  if (card.value === 'wild' || card.value === 'wild4') return 'ðŸŒˆ';
+  if (card.value === 'reverse') return '🔄';
+  if (card.value === 'skip') return '🚫';
+  if (card.value === 'draw2') return '➕';
+  if (card.value === 'wild' || card.value === 'wild4') return '🃏';
   return String(card.value);
 }
 
@@ -230,7 +230,7 @@ function playCardLocal(playerIdx, cardIdx, color = null) {
   const top = topCard();
 
   if (!card || !isValidMove(card, top)) {
-    addLog('âŒ Kartu tidak cocok!');
+    addLog('❌ Kartu tidak cocok!');
     showToast('Kartu tidak cocok');
     return;
   }
@@ -243,7 +243,7 @@ function playCardLocal(playerIdx, cardIdx, color = null) {
 
   if (player.hand.length === 0) {
     gameState.winner = player;
-    addLog(`ðŸŽ‰ ${player.name} MENANG!`);
+    addLog(`🎉 ${player.name} MENANG!`);
     showToast(`${player.name} Menang!`);
     playSound('win');
     renderGameplay();
@@ -259,13 +259,13 @@ function playCardLocal(playerIdx, cardIdx, color = null) {
   if (card.value === 'skip') {
     nextIdx = nextTurn(nextIdx);
     nextIdx = nextTurn(nextIdx);
-    addLog('â­ Skip!');
+    addLog('⏭ Skip!');
   } else if (card.value === 'reverse') {
     gameState.direction *= -1;
     if (gameState.players.length === 2) {
       nextIdx = nextTurn(nextIdx);
     }
-    addLog('âŸ² Reverse!');
+    addLog('🔄 Reverse!');
   } else if (card.value === 'draw2') {
     nextIdx = nextTurn(nextIdx);
     const target = gameState.players[nextIdx];
@@ -313,7 +313,7 @@ function botTurn() {
         playCardLocal(1, idx, color);
         return;
       }
-      addLog('ðŸ¤– Bot pass');
+      addLog('🤖 Bot pass');
       gameState.currentPlayer = 0;
       renderGameplay();
       return;
@@ -359,7 +359,7 @@ function resetLocalGame() {
   gameState.log = [];
 
   DOM.colorPicker.classList.add('hidden');
-  addLog('ðŸƒ Ronde dimulai!');
+  addLog('🃏 Ronde dimulai!');
   renderGameplay();
 }
 
@@ -368,16 +368,16 @@ function drawLocal() {
   const drawn = drawCardLocal(0);
 
   if (!drawn) {
-    addLog('âŒ Deck habis!');
+    addLog('❌ Deck habis!');
     renderGameplay();
     return;
   }
 
-  addLog('ðŸ“š Ambil 1 kartu');
+  addLog('🎴 Ambil 1 kartu');
   playSound('draw');
 
   if (isValidMove(drawn, topCard())) {
-    addLog('âœ… Bisa dimainkan!');
+    addLog('✅ Bisa dimainkan!');
 
     if (drawn.color === 'wild' || drawn.value === 'wild4') {
       gameState.pendingWild = me.hand.length - 1;
@@ -458,7 +458,7 @@ function positionSeat(seat, idx, meIdx, total) {
 }
 
 function opponentHandCount(player) {
-  if (player.handCount !== undefined && player.handCount !== null) {
+  if (gameState.isOnline && typeof player.handCount === 'number') {
     return player.handCount;
   }
   return (player.hand || []).length;
@@ -470,7 +470,7 @@ function renderSeats() {
 
   const total = gameState.players.length;
   const meIdx = myIndex();
-  const meAvatar = gameState.playerProfile.avatar || 'ðŸ§‘';
+  const meAvatar = gameState.playerProfile.avatar || '🧑';
 
   gameState.players.forEach((player, idx) => {
     const seat = document.createElement('div');
@@ -485,20 +485,23 @@ function renderSeats() {
           <span class="seat-name">${player.name}</span>
           <span class="card-count">${handLen}</span>
         </div>
-        <div class="my-hand${handLen > 12 ? ' many-cards' : ''}"></div>
+        <div class="my-hand"></div>
       `;
       const handEl = seat.querySelector('.my-hand');
       handEl.innerHTML = (player.hand || [])
         .map((card, ci) => cardButtonHTML(card, ci, playableFromHand(card)))
         .join('');
+      if (handEl.scrollWidth > handEl.clientWidth) {
+        handEl.scrollLeft = handEl.scrollWidth;
+      }
     } else {
       seat.classList.add('seat-opponent');
-const count = opponentHandCount(player);
+      const count = opponentHandCount(player);
       const avatar = gameState.isOnline ? '👤' : '🤖';
       const shown = Math.max(1, Math.min(count, 6));
       const cardsHTML = Array.from({ length: shown }, () =>
         '<span class="uno-card back-card">🂠</span>'
-      ).join('');
+      ).join('') + (count > shown ? `<span class="stack-more">+${count - shown}</span>` : '');
       seat.innerHTML = `
         <div class="seat-name-row">
           <span class="seat-avatar">${avatar}</span>
@@ -529,7 +532,7 @@ function renderDeckCount() {
 
 function updateStatus() {
   if (gameState.winner) {
-    DOM.statusContent.textContent = `ðŸ† ${gameState.winner.name} menang!`;
+    DOM.statusContent.textContent = `🏆 ${gameState.winner.name} menang!`;
     return;
   }
   if (!gameState.players.length || !gameState.players[gameState.currentPlayer]) {
@@ -538,8 +541,8 @@ function updateStatus() {
   }
   const current = gameState.players[gameState.currentPlayer];
   const you = isMyTurn();
-  const dirArrow = gameState.direction === 1 ? 'â†»' : 'â†º';
-  DOM.statusContent.textContent = `Giliran: ${current.name}${you ? ' (Kamu)' : ''} â€¢ Arah ${dirArrow}`;
+  const dirArrow = gameState.direction === 1 ? '↻' : '↺';
+  DOM.statusContent.textContent = `Giliran: ${current.name}${you ? ' (Kamu)' : ''} • Arah ${dirArrow}`;
 }
 
 function renderGameplay() {
@@ -614,7 +617,7 @@ function connectSocket(action) {
   if (action) gameState.pendingSocketAction = action;
 
   gameState.socket.on('connect', () => {
-    DOM.connectionStatus.textContent = 'âœ… Terhubung';
+    DOM.connectionStatus.textContent = '✅ Terhubung';
     if (gameState.pendingSocketAction) {
       const a = gameState.pendingSocketAction;
       gameState.pendingSocketAction = null;
@@ -623,7 +626,7 @@ function connectSocket(action) {
   });
 
   gameState.socket.on('disconnect', () => {
-    DOM.connectionStatus.textContent = 'âŒ Offline';
+    DOM.connectionStatus.textContent = '❌ Offline';
   });
 
   gameState.socket.on('roomCreated', ({ code }) => {
@@ -646,7 +649,7 @@ function connectSocket(action) {
   gameState.socket.on('gameState', handleGameState);
 
   gameState.socket.on('error', ({ message }) => {
-    showToast(`âŒ ${message}`);
+    showToast(`❌ ${message}`);
   });
 }
 
@@ -859,7 +862,7 @@ DOM.drawBtn.addEventListener('click', () => {
 
 DOM.passBtn.addEventListener('click', () => {
   if (gameState.isOnline || gameState.winner || !isMyTurn()) return;
-  addLog('â­ Pass');
+  addLog('⏭ Pass');
   gameState.currentPlayer = nextTurn(0);
   renderGameplay();
   const nextPlayer = gameState.players[gameState.currentPlayer];
@@ -876,7 +879,7 @@ DOM.unoBtn.addEventListener('click', () => {
     gameState.socket.emit('callUno', { code: gameState.roomCode });
   } else {
     me.hasUno = true;
-    addLog('ðŸŽº UNO!');
+    addLog('🎺 UNO!');
     showToast('UNO!');
     playSound('win');
     renderGameplay();

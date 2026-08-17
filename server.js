@@ -253,7 +253,7 @@ io.on('connection', (socket) => {
 
     if (player.hand.length === 0) {
       room.winner = player.name;
-      room.message = `${player.name} menang! ðŸŽ‰`;
+      room.message = `${player.name} menang! 🎉`;
       broadcastRoomState(room);
       return;
     }
@@ -369,6 +369,6 @@ io.on('connection', (socket) => {
 });
 
 httpServer.listen(PORT, () => {
-  console.log(`\nðŸŽ® UNO Server running on http://localhost:${PORT}\n`);
+  console.log(`\n🎮 UNO Server running on http://localhost:${PORT}\n`);
 });
 
