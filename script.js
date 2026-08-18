@@ -203,6 +203,13 @@ const gameState = {
     name: 'Pemain',
     avatar: '👦'
   },
+  auth: {
+    token: '',
+    username: '',
+    avatar: '👦',
+    serverOk: false
+  },
+  me: null,
 
   soundEnabled: true,
 
@@ -248,6 +255,11 @@ const gameState = {
   lastTopId: null
 };
 
+// Nama pemain aktif: username akun jika sudah login, selain itu nama lokal
+function getPlayerName() {
+  return (gameState.auth.username || gameState.playerProfile.name || 'Pemain');
+}
+
 /* ============================================
    CACHE DOM
    ============================================ */
@@ -257,7 +269,15 @@ const DOM = {
   roomScreen: document.getElementById('room-screen'),
   gameplayScreen: document.getElementById('gameplay-screen'),
 
-  playerNameInput: document.getElementById('player-name'),
+  authUsername: document.getElementById('auth-username'),
+  authPassword: document.getElementById('auth-password'),
+  authLoginBtn: document.getElementById('auth-login-btn'),
+  authRegisterBtn: document.getElementById('auth-register-btn'),
+  authLogoutBtn: document.getElementById('auth-logout-btn'),
+  authMsg: document.getElementById('auth-msg'),
+  authBox: document.getElementById('auth-box'),
+  authProfile: document.getElementById('auth-profile'),
+  authUserLabel: document.getElementById('auth-user-label'),
   avatarBtns: [...document.querySelectorAll('.avatar-btn')],
   createRoomBtn: document.getElementById('create-room-btn'),
   createPrivateBtn: document.getElementById('create-private-btn'),
@@ -1041,7 +1061,7 @@ function spawnHostPeer() {
     setConnectionState('online', 'Online');
     gameState.players = [{
       id: peer.id,
-      name: gameState.playerProfile.name || 'Pemain',
+      name: getPlayerName(),
       avatar: gameState.playerProfile.avatar || '👦',
       isMe: true,
       isHost: true,
@@ -1297,7 +1317,7 @@ function startOnlineGame() {
 function makeLobbyRoomInfo() {
   return {
     code: gameState.roomCode,
-    hostName: gameState.playerProfile.name || 'Host',
+    hostName: getPlayerName(),
     hostAvatar: gameState.playerProfile.avatar || '👤',
     players: gameState.players.length,
     capacity: gameState.roomCapacity,
@@ -1497,7 +1517,7 @@ function renderPublicRooms() {
 
 function updateOnlineUsers() {
   const users = new Set();
-  users.add(gameState.playerProfile.name || 'Pemain');
+  users.add(getPlayerName());
   gameState.lobby.rooms.forEach((r) => {
     if (r.hostName) users.add(r.hostName);
     (r.members || []).forEach((m) => users.add(m));
@@ -1518,15 +1538,138 @@ function renderOnlineUsers() {
 }
 
 /* ============================================
+   AUTH & STATUS SERVER (Vercel /api - Neon)
+   ============================================ */
+
+function showAuthMsg(text, ok) {
+  if (!DOM.authMsg) return;
+  DOM.authMsg.textContent = text || '';
+  DOM.authMsg.className = 'auth-msg ' + (ok ? 'ok' : (text ? 'err' : ''));
+}
+
+function applyAuthUI() {
+  const logged = !!gameState.auth.username;
+  if (DOM.authBox) DOM.authBox.classList.toggle('hidden', logged);
+  if (DOM.authProfile) DOM.authProfile.classList.toggle('hidden', !logged);
+  if (DOM.authUserLabel) DOM.authUserLabel.textContent = (gameState.auth.avatar || '👤') + ' ' + gameState.auth.username;
+  if (DOM.authMsg) { DOM.authMsg.textContent = ''; DOM.authMsg.className = 'auth-msg'; }
+}
+
+function persistAuth() {
+  try {
+    localStorage.setItem('unoduel_auth', JSON.stringify({
+      token: gameState.auth.token,
+      username: gameState.auth.username,
+      avatar: gameState.auth.avatar
+    }));
+  } catch (e) { /* ignore */ }
+}
+
+async function apiPost(url, body, token) {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
+    body: JSON.stringify(body || {})
+  });
+  const data = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, data };
+}
+
+async function handleAuth(action) {
+  const username = ((DOM.authUsername && DOM.authUsername.value) || '').trim();
+  const password = (DOM.authPassword && DOM.authPassword.value) || '';
+  if (username.length < 3) { showAuthMsg('Username minimal 3 karakter', false); return; }
+  if (password.length < 4) { showAuthMsg('Password minimal 4 karakter', false); return; }
+  const { ok, data } = await apiPost('/api/' + action, { username, password, avatar: gameState.playerProfile.avatar });
+  if (!ok) { showAuthMsg((data && data.error) || 'Gagal, coba lagi', false); return; }
+  gameState.auth.token = data.token || '';
+  gameState.auth.username = (data.user && data.user.username) || username;
+  gameState.auth.avatar = (data.user && data.user.avatar) || gameState.playerProfile.avatar;
+  gameState.playerProfile.name = gameState.auth.username;
+  gameState.playerProfile.avatar = gameState.auth.avatar;
+  if (DOM.authUsername) DOM.authUsername.value = '';
+  if (DOM.authPassword) DOM.authPassword.value = '';
+  persistAuth();
+  applyAuthUI();
+  showAuthMsg('Berhasil. Selamat datang, ' + gameState.auth.username + '!', true);
+  loadLeaderboard();
+  updateOnlineUsers();
+}
+
+async function logoutUser() {
+  gameState.auth.token = '';
+  gameState.auth.username = '';
+  gameState.auth.avatar = '';
+  gameState.playerProfile.name = 'Pemain';
+  gameState.me = null;
+  try { localStorage.removeItem('unoduel_auth'); } catch (e) { /* ignore */ }
+  applyAuthUI();
+  showAuthMsg('Sudah keluar.', true);
+  loadLeaderboard();
+  updateOnlineUsers();
+}
+
+async function restoreAuth() {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem('unoduel_auth') || 'null'); } catch (e) { /* ignore */ }
+  if (!saved || !saved.token) { applyAuthUI(); return; }
+  try {
+    const res = await fetch('/api/me', { headers: { Authorization: 'Bearer ' + saved.token } });
+    const data = await res.json();
+    if (res.ok && data && data.user) {
+      gameState.auth.token = saved.token;
+      gameState.auth.username = data.user.username;
+      gameState.auth.avatar = data.user.avatar || saved.avatar || '👦';
+      gameState.playerProfile.name = gameState.auth.username;
+      gameState.playerProfile.avatar = gameState.auth.avatar;
+      gameState.me = data.me || null;
+    } else {
+      try { localStorage.removeItem('unoduel_auth'); } catch (e) { /* ignore */ }
+    }
+  } catch (e) {
+    // server belum bisa dijangkau -> pakai sesi lokal dulu
+    gameState.auth.token = saved.token;
+    gameState.auth.username = saved.username;
+    gameState.auth.avatar = saved.avatar || '👦';
+    gameState.playerProfile.name = gameState.auth.username;
+    gameState.playerProfile.avatar = gameState.auth.avatar;
+  }
+  applyAuthUI();
+  loadLeaderboard();
+}
+
+async function checkServerHealth() {
+  try {
+    const res = await fetch('/api/health', { headers: { Accept: 'application/json' } });
+    const data = await res.json();
+    gameState.auth.serverOk = !!(data && data.ok);
+  } catch (e) {
+    gameState.auth.serverOk = false;
+  }
+  setConnectionState(
+    gameState.auth.serverOk ? 'online' : 'offline',
+    gameState.auth.serverOk ? 'Server Online' : 'Server Offline'
+  );
+}
+
+/* ============================================
    LEADERBOARD (Papan Peringkat - Neon via Vercel /api/score)
    ============================================ */
 
 async function loadLeaderboard() {
   gameState.leaderboard = [];
+  gameState.me = null;
+  const meName = getPlayerName();
   try {
-    const res = await fetch('/api/score');
+    const qs = meName ? '?name=' + encodeURIComponent(meName) : '';
+    const res = await fetch('/api/score' + qs, { headers: { Accept: 'application/json' } });
     const data = await res.json();
-    if (Array.isArray(data)) gameState.leaderboard = data;
+    if (Array.isArray(data)) {
+      gameState.leaderboard = data;
+    } else if (data && Array.isArray(data.leaderboard)) {
+      gameState.leaderboard = data.leaderboard;
+      gameState.me = data.me || null;
+    }
   } catch (e) {
     console.warn('Gagal memuat leaderboard:', e);
   }
@@ -1535,11 +1678,15 @@ async function loadLeaderboard() {
 
 async function recordWin(name) {
   if (!name || name === 'Bot') return;
+  if (!gameState.auth.username) return; // tamu tidak dicatat ke papan
   try {
     await fetch('/api/score', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name })
+      headers: {
+        'Content-Type': 'application/json',
+        ...(gameState.auth.token ? { Authorization: 'Bearer ' + gameState.auth.token } : {})
+      },
+      body: JSON.stringify({ name: getPlayerName(), avatar: gameState.playerProfile.avatar })
     });
   } catch (e) {
     console.warn('Gagal menyimpan skor:', e);
@@ -1553,9 +1700,10 @@ function renderLeaderboard() {
     list.innerHTML = '<li class="list-empty">Belum ada skor. Menangkan game untuk masuk papan.</li>';
     return;
   }
-  list.innerHTML = gameState.leaderboard.map((e, i) => `
-    <li><span class="rank">${i + 1}</span> ${escapeHtml(e.name)}<span class="points">${e.wins}</span></li>
-  `).join('');
+  list.innerHTML = gameState.leaderboard.map((e, i) => {
+    const isMe = gameState.me && e.name === gameState.me.name;
+    return `<li class="${isMe ? 'lb-me' : ''}"><span class="rank">${i + 1}</span> ${escapeHtml(e.name)}<span class="points">${e.wins}</span></li>`;
+  }).join('');
 }
 /* ============================================
    P2P - LOGIKA CLIENT
@@ -1596,7 +1744,7 @@ function joinRoom(code) {
       conn.send({
         type: 'JOIN_ROOM',
         player: {
-          name: gameState.playerProfile.name || 'Pemain',
+          name: getPlayerName(),
           avatar: gameState.playerProfile.avatar || '👦'
         }
       });
@@ -1771,7 +1919,7 @@ function resetLocalGame() {
   gameState.players = [
     {
       id: 'player1',
-      name: gameState.playerProfile.name || 'Pemain',
+      name: getPlayerName(),
       avatar: gameState.playerProfile.avatar || '👦',
       isMe: true,
       isHost: false,
@@ -2156,9 +2304,10 @@ function pushStatusEvent(message) {
    EVENT HANDLERS - LOBBY
    ============================================ */
 
-DOM.playerNameInput.addEventListener('input', (e) => {
-  gameState.playerProfile.name = e.target.value.trim() || 'Pemain';
-});
+DOM.authLoginBtn.addEventListener('click', () => handleAuth('login'));
+DOM.authRegisterBtn.addEventListener('click', () => handleAuth('register'));
+DOM.authLogoutBtn.addEventListener('click', logoutUser);
+DOM.authPassword.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleAuth('login'); });
 
 DOM.avatarBtns.forEach((btn) => {
   btn.addEventListener('click', () => {
@@ -2464,7 +2613,6 @@ function init() {
     gameState.roomCapacity = parseInt(DOM.roomCapacity.value, 10) || 4;
   });
 
-  DOM.playerNameInput.value = gameState.playerProfile.name;
   gameState.playerProfile.avatar = DOM.avatarBtns[0].dataset.avatar;
   DOM.avatarBtns[0].classList.add('active');
 
@@ -2474,6 +2622,9 @@ function init() {
   buildEmoteGrid();
 
   loadLeaderboard();
+  restoreAuth();
+  checkServerHealth();
+  setInterval(checkServerHealth, 15000);
   renderOnlineUsers();
 
   // Ambil daftar room publik & daftar pemain online saat lobby dibuka

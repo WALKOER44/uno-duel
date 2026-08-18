@@ -23,8 +23,23 @@
 
       <!-- Profil pemain -->
       <div class="panel profile-panel">
-        <div class="field-label">Nama Pemain</div>
-        <input id="player-name" class="text-input" type="text" maxlength="16" placeholder="Masukkan nama..." />
+        <div class="auth-box" id="auth-box">
+          <div class="field-label">Username (Akun)</div>
+          <input id="auth-username" class="text-input" type="text" maxlength="16" placeholder="Username..." />
+          <div class="field-label">Password</div>
+          <input id="auth-password" class="text-input" type="password" placeholder="Password..." />
+          <div class="auth-btns">
+            <button id="auth-login-btn" class="btn btn-yellow">Masuk</button>
+            <button id="auth-register-btn" class="btn btn-white">Daftar</button>
+          </div>
+          <div id="auth-msg" class="auth-msg"></div>
+        </div>
+        <div class="auth-box hidden" id="auth-profile">
+          <div class="auth-user" id="auth-user-label">👤 -</div>
+          <div class="auth-btns">
+            <button id="auth-logout-btn" class="btn btn-white">Keluar</button>
+          </div>
+        </div>
         <div class="field-label">Pilih Avatar</div>
         <div class="avatar-row">
           <button class="avatar-btn active" data-avatar="👦">👦</button>

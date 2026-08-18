@@ -1,86 +1,56 @@
 // Vercel Serverless Function: leaderboard UNO Duel (Neon PostgreSQL)
 //
-//   GET  /api/score  -> top 10 papan peringkat
-//   POST /api/score  -> body: { "name": "<nama pemain>" } (tambah 1 kemenangan)
-//
-// Persyaratan di Vercel (Dashboard -> Project -> Settings -> Environment Variables):
-//   DATABASE_URL = postgresql://user:pass@host.neon.tech/dbname?sslmode=require
-
-const { Pool } = require('pg');
-
-// Pool dibagikan antar-request. Vercel akan reuse koneksi di cold start.
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
-  max: 5,
-  connectionTimeoutMillis: 10000
-});
-
-// Pastikan tabel ada (dijalankan saat function pertama kali dipanggil)
-async function ensureTable() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS leaderboard (
-      name  TEXT PRIMARY KEY,
-      wins  INTEGER NOT NULL DEFAULT 1,
-      avatar TEXT,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
-  `);
-}
-
-function json(res, status, data) {
-  res.status(status).setHeader('Content-Type', 'application/json');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  res.end(JSON.stringify(data));
-}
-
-function readBody(req) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    req.on('data', (c) => chunks.push(c));
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-    req.on('error', reject);
-  });
-}
+//   GET  /api/score           -> top 10 papan peringkat (array)
+//   GET  /api/score?name=aku  -> { leaderboard: top10, me: { name, wins, rank } | null }
+//   POST /api/score           -> body { name, avatar } (tambah 1 kemenangan)
+//                                opsional Authorization: Bearer <token> -> pakai username akun
+//   OPTIONS                   -> CORS 204
+const { pool, ensureTables, verifyToken, json, cors, readBody } = require('./_db');
 
 module.exports = async (req, res) => {
-  // CORS preflight
-  if (req.method === 'OPTIONS') {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    res.status(204).end();
-    return;
-  }
+  if (req.method === 'OPTIONS') return cors(res);
 
   try {
-    if (!process.env.DATABASE_URL) {
-      json(res, 500, { error: 'DATABASE_URL belum di-set di Vercel env' });
-      return;
-    }
+    if (!process.env.DATABASE_URL) return json(res, 500, { error: 'DATABASE_URL belum di-set di Vercel env' });
+    await ensureTables();
 
-    await ensureTable();
-
-    // --- GET: ambil top 10 ---
+    // --- GET: ambil top 10 (+ me jika ?name=) ---
     if (req.method === 'GET') {
+      const url = new URL(req.url, 'https://localhost');
+      const meName = (url.searchParams.get('name') || '').trim();
       const { rows } = await pool.query(
         'SELECT name, wins, avatar FROM leaderboard ORDER BY wins DESC, updated_at ASC LIMIT 10'
       );
-      json(res, 200, rows);
-      return;
+      if (!meName) return json(res, 200, rows);
+
+      let me = null;
+      const mine = await pool.query('SELECT name, wins, avatar FROM leaderboard WHERE name = $1', [meName]);
+      if (mine.rows.length) {
+        const rk = await pool.query('SELECT COUNT(*)::int AS r FROM leaderboard WHERE wins > $1', [mine.rows[0].wins]);
+        me = { ...mine.rows[0], rank: rk.rows[0].r + 1 };
+      }
+      return json(res, 200, { leaderboard: rows, me });
     }
 
     // --- POST: simpan/tambah skor ---
     if (req.method === 'POST') {
-      const body = JSON.parse(readBody(req) || '{}');
-      const name = String(body.name || '').trim().slice(0, 40);
-      const avatar = String(body.avatar || '👤').slice(0, 8);
-      if (!name || name.toLowerCase() === 'bot') {
-        json(res, 400, { error: 'nama pemain tidak valid' });
-        return;
+      const body = JSON.parse(await readBody(req) || '{}');
+      let name = String(body.name || '').trim().slice(0, 40);
+      let avatar = String(body.avatar || '👤').slice(0, 8);
+
+      // Jika ada token -> identitas dari akun (lebih aman)
+      const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+      const payload = verifyToken(token);
+      if (payload && payload.username) {
+        const u = await pool.query('SELECT username, avatar FROM users WHERE username = $1', [payload.username]);
+        if (u.rows.length) {
+          name = u.rows[0].username;
+          avatar = u.rows[0].avatar || avatar;
+        }
       }
+
+      if (!name || name.toLowerCase() === 'bot') return json(res, 400, { error: 'nama pemain tidak valid' });
+
       const { rows } = await pool.query(
         `INSERT INTO leaderboard (name, wins, avatar)
          VALUES ($1, 1, $2)
@@ -89,13 +59,12 @@ module.exports = async (req, res) => {
          RETURNING name, wins, avatar`,
         [name, avatar]
       );
-      json(res, 200, rows[0]);
-      return;
+      return json(res, 200, rows[0]);
     }
 
     json(res, 405, { error: 'method tidak didukung' });
   } catch (err) {
     console.error('api/score error:', err);
-    json(res, 500, { error: 'Database error: ' + (err.message || 'unknown') });
+    json(res, 500, { error: 'Database error' });
   }
 };
