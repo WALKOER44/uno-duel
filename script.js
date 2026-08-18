@@ -39,30 +39,15 @@ const PEER_CONFIG = {
   }
 };
 
-// ===== RELAY (server opsional) =====
-// GitHub Pages HANYA file statis — TIDAK bisa menjalankan server.
-// Untuk status Online yang stabil + daftar room publik yang bisa diandalkan,
-// deploy folder server/ ke Render / Railway / Glitch (gratis), lalu:
-//   RELAY.enabled = true   dan   RELAY.host = '<url relay anda>'
-// Jika enabled=false, game memakai broker PeerJS publik (0.peerjs.com).
-const RELAY = {
-  enabled: true,
-  host: 'lucid-laughter-production-a9df.up.railway.app',
-  port: 443,
-  path: '/peerjs',
-  secure: true
-};
-
-// URL Socket.io production Railway
-const SOCKET_URL = (RELAY.secure ? 'https://' : 'http://') + RELAY.host;
-
+// ===== Koneksi P2P (PeerJS) =====
+// Multiplayer memakai WebRTC Peer-to-Peer via broker PeerJS publik (0.peerjs.com).
+// Backend Vercel (/api/score) dipakai untuk Papan Peringkat & data game (Neon PostgreSQL).
 function peerConfig() {
-  const b = RELAY.enabled ? RELAY : { host: '0.peerjs.com', port: 443, path: '/', secure: true };
   return {
-    host: b.host,
-    port: b.port,
-    path: b.path,
-    secure: b.secure,
+    host: '0.peerjs.com',
+    port: 443,
+    path: '/',
+    secure: true,
     debug: 1,
     config: {
       iceServers: [
@@ -232,7 +217,6 @@ const gameState = {
   connected: false,
   roomCapacity: 4,
   isPublic: false,
-  socket: null,
   botTimer: null,
   resyncTimer: null,
 
@@ -258,8 +242,7 @@ const gameState = {
     peer: null,
     conn: null,
     conns: new Set(),
-    rooms: [],
-    serverRooms: []
+    rooms: []
   },
   onlineUsers: [],
   lastTopId: null
@@ -1071,7 +1054,6 @@ function spawnHostPeer() {
     if (gameState.isPublic) {
       lobbyEnsure();
       setTimeout(lobbyRegister, 1200);
-      setTimeout(socketRegisterRoom, 1200);
     }
   });
 
@@ -1325,61 +1307,6 @@ function makeLobbyRoomInfo() {
 }
 
 // Coba jadi keeper lobby; jika ID sudah dipakai orang lain, jadi client.
-/* ============================================
-   RELAY SOCKET.IO (server opsional)
-   - status server Online/Offline
-   - daftar room publik yang stabil (tanpa race "keeper")
-   ============================================ */
-function socketConnect() {
-  if (!window.io || !RELAY.enabled || gameState.socket) return;
-  try {
-    const s = io(SOCKET_URL, {
-      transports: ['websocket', 'polling']
-    });
-    gameState.socket = s;
-
-    s.on('connect', () => {
-      setConnectionState('online', 'Server Online');
-      s.emit('rooms.get');
-      if (gameState.isHost && gameState.isPublic && gameState.roomCode) {
-        setTimeout(socketRegisterRoom, 400);
-      }
-    });
-
-    s.on('disconnect', () => {
-      if (!gameState.connected) setConnectionState('connecting', 'Server offline');
-    });
-
-    s.on('rooms.update', (rooms) => {
-      gameState.lobby.serverRooms = (rooms || []).filter((r) => r.isPublic);
-      renderPublicRooms();
-    });
-  } catch (e) {
-    console.warn('Socket.io tidak tersedia:', e);
-  }
-}
-
-function socketRegisterRoom() {
-  const s = gameState.socket;
-  if (!s || !s.connected) return;
-  s.emit('room.register', {
-    code: gameState.roomCode,
-    hostName: gameState.playerProfile.name || 'Pemain',
-    avatar: gameState.playerProfile.avatar || '👦',
-    capacity: gameState.roomCapacity,
-    players: gameState.players.length,
-    isPublic: true,
-    ts: Date.now()
-  });
-}
-
-function socketUnregisterRoom() {
-  const s = gameState.socket;
-  if (!s || !s.connected) return;
-  s.emit('room.unregister', gameState.roomCode);
-  gameState.lobby.serverRooms = gameState.lobby.serverRooms.filter((r) => r.code !== gameState.roomCode);
-}
-
 function lobbyEnsure() {
   if (gameState.lobby.peer && !gameState.lobby.peer.destroyed) return;
   const p = new Peer(LOBBY_PEER_ID, peerConfig());
@@ -1388,6 +1315,8 @@ function lobbyEnsure() {
 
   p.on('open', () => {
     gameState.lobby.keeper = true;
+    // Broker PeerJS terhubung -> status Online (di lobby/ruang tunggu)
+    if (!gameState.gameStarted) setConnectionState('online', 'Online');
     p.on('connection', (conn) => {
       conn.on('open', () => {
         gameState.lobby.conns.add(conn);
@@ -1409,6 +1338,10 @@ function lobbyEnsure() {
       gameState.lobby.peer = null;
       gameState.lobby.keeper = false;
       lobbyConnectClient();
+    } else {
+      if (!gameState.connected && !gameState.gameStarted) {
+        setConnectionState('connecting', 'Menghubungkan ulang...');
+      }
     }
   });
 
@@ -1428,6 +1361,7 @@ function lobbyConnectClient() {
   gameState.lobby.peer = p;
 
   p.on('open', () => {
+    if (!gameState.gameStarted) setConnectionState('online', 'Online');
     const conn = p.connect(LOBBY_PEER_ID, { reliable: true });
     gameState.lobby.conn = conn;
     conn.on('open', () => {
@@ -1506,9 +1440,6 @@ function lobbyUnregister() {
 }
 
 function lobbyRefresh() {
-  if (gameState.socket && gameState.socket.connected) {
-    gameState.socket.emit('rooms.get');
-  }
   if (gameState.lobby.keeper) {
     lobbyBroadcastList();
     return;
@@ -1539,7 +1470,7 @@ function renderPublicRooms() {
   const list = DOM.publicRoomList;
   const merged = [];
   const seen = new Set();
-  gameState.lobby.serverRooms.concat(gameState.lobby.rooms).forEach((r) => {
+  gameState.lobby.rooms.forEach((r) => {
     if (!r.isPublic || seen.has(r.code)) return;
     seen.add(r.code);
     merged.push(r);
@@ -1571,9 +1502,6 @@ function updateOnlineUsers() {
     if (r.hostName) users.add(r.hostName);
     (r.members || []).forEach((m) => users.add(m));
   });
-  gameState.lobby.serverRooms.forEach((r) => {
-    if (r.hostName) users.add(r.hostName);
-  });
   gameState.onlineUsers = [...users];
   renderOnlineUsers();
 }
@@ -1590,40 +1518,33 @@ function renderOnlineUsers() {
 }
 
 /* ============================================
-   LEADERBOARD (Papan Peringkat - localStorage)
+   LEADERBOARD (Papan Peringkat - Neon via Vercel /api/score)
    ============================================ */
 
-function loadLeaderboard() {
+async function loadLeaderboard() {
+  gameState.leaderboard = [];
   try {
-    gameState.leaderboard = JSON.parse(localStorage.getItem('unoduel_leaderboard') || '[]');
+    const res = await fetch('/api/score');
+    const data = await res.json();
+    if (Array.isArray(data)) gameState.leaderboard = data;
   } catch (e) {
-    gameState.leaderboard = [];
+    console.warn('Gagal memuat leaderboard:', e);
   }
-  if (!Array.isArray(gameState.leaderboard)) gameState.leaderboard = [];
-}
-
-function saveLeaderboard() {
-  try {
-    localStorage.setItem('unoduel_leaderboard', JSON.stringify(gameState.leaderboard));
-  } catch (e) {
-    // ignore
-  }
-}
-
-function recordWin(name) {
-  if (!name || name === 'Bot') return;
-  const entry = gameState.leaderboard.find((e) => e.name === name);
-  if (entry) {
-    entry.wins += 1;
-  } else {
-    gameState.leaderboard.push({ name, wins: 1 });
-  }
-  gameState.leaderboard.sort((a, b) => b.wins - a.wins);
-  if (gameState.leaderboard.length > 10) {
-    gameState.leaderboard = gameState.leaderboard.slice(0, 10);
-  }
-  saveLeaderboard();
   renderLeaderboard();
+}
+
+async function recordWin(name) {
+  if (!name || name === 'Bot') return;
+  try {
+    await fetch('/api/score', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name })
+    });
+  } catch (e) {
+    console.warn('Gagal menyimpan skor:', e);
+  }
+  loadLeaderboard();
 }
 
 function renderLeaderboard() {
@@ -1803,7 +1724,6 @@ function resetOnlineState() {
 function leaveGame() {
   if (gameState.isPublic) {
     lobbyUnregister();
-    socketUnregisterRoom();
   }
   if (gameState.peer) {
     try {
@@ -2529,8 +2449,6 @@ function buildEmoteGrid() {
 function init() {
   showScreen('lobby');
 
-  // Relay server (jika aktif) untuk status Online + daftar room publik stabil
-  socketConnect();
   lobbyEnsure();
   setTimeout(lobbyRefresh, 2000);
 
@@ -2544,9 +2462,6 @@ function init() {
   }
   DOM.roomCapacity.addEventListener('change', () => {
     gameState.roomCapacity = parseInt(DOM.roomCapacity.value, 10) || 4;
-    if (gameState.isHost && gameState.isPublic) {
-      setTimeout(socketRegisterRoom, 300);
-    }
   });
 
   DOM.playerNameInput.value = gameState.playerProfile.name;
@@ -2559,7 +2474,6 @@ function init() {
   buildEmoteGrid();
 
   loadLeaderboard();
-  renderLeaderboard();
   renderOnlineUsers();
 
   // Ambil daftar room publik & daftar pemain online saat lobby dibuka
