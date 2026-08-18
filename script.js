@@ -47,7 +47,7 @@ const PEER_CONFIG = {
 // Jika enabled=false, game memakai broker PeerJS publik (0.peerjs.com).
 const RELAY = {
   enabled: true,
-  host: 'uno-duel-production.up.railway.app',
+  host: 'lucid-laughter-production-a9df.up.railway.app',
   port: 443,
   path: '/peerjs',
   secure: true

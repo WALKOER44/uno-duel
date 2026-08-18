@@ -75,3 +75,11 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
   console.log('Server running on port ' + PORT);
 });
+
+// Diagnostik: apa pun yang crash, tulis ke Railway Deploy Logs
+server.on('error', (err) => {
+  console.error('Server error:', err);
+  process.exit(1);
+});
+process.on('unhandledRejection', (e) => console.error('unhandledRejection:', e));
+process.on('uncaughtException', (e) => console.error('uncaughtException:', e));
