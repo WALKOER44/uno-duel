@@ -26,35 +26,74 @@ const LOBBY_PEER_ID = 'uno-duel-lobby';
 // Kartu aksi. +16 TIDAK dipakai lagi.
 const ACTION_VALUES = ['skip', 'reverse', 'draw2', 'wild', 'wild4'];
 
-const PEER_CONFIG = {
-  host: '0.peerjs.com',
-  port: 443,
-  path: '/',
-  secure: true,
-  debug: 1,
-  config: {
-    iceServers: [
-      { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }
-    ]
-  }
-};
+// Broker PeerJS publik — kalau satu mati, otomatis coba broker lain (anti-stuck).
+const PEER_BROKERS = [
+  { host: '0.peerjs.com', port: 443 },
+  { host: '1.peerjs.com', port: 443 },
+  { host: '2.peerjs.com', port: 443 }
+];
+
+// ICE: STUN Google + TURN publik (openrelay) supaya koneksi tembus NAT ketat.
+const ICE_SERVERS = [
+  { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+  { urls: 'stun:openrelay.metered.ca:80' },
+  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
+];
 
 // ===== Koneksi P2P (PeerJS) =====
-// Multiplayer memakai WebRTC Peer-to-Peer via broker PeerJS publik (0.peerjs.com).
-// Backend Vercel (/api/score) dipakai untuk Papan Peringkat & data game (Neon PostgreSQL).
-function peerConfig() {
+// Multiplayer memakai WebRTC Peer-to-Peer via broker PeerJS publik (berbasis 0.peerjs.com
+// dengan fallback 1/2.peerjs.com). Backend Vercel (/api/score) untuk Papan Peringkat.
+let _brokerIdx = 0;
+let _brokerDownCount = 0;
+
+function peerConfig(brokerIdx) {
+  const b = PEER_BROKERS[brokerIdx] || PEER_BROKERS[0];
   return {
-    host: '0.peerjs.com',
-    port: 443,
+    host: b.host,
+    port: b.port,
     path: '/',
     secure: true,
     debug: 1,
-    config: {
-      iceServers: [
-        { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }
-      ]
-    }
+    config: { iceServers: ICE_SERVERS }
   };
+}
+
+function nextBroker() {
+  _brokerIdx = (_brokerIdx + 1) % PEER_BROKERS.length;
+}
+
+function currentBrokerName() {
+  const b = PEER_BROKERS[_brokerIdx] || PEER_BROKERS[0];
+  return b.host;
+}
+
+// true = boleh lanjut coba broker berikutnya; false = semua broker sudah dicoba.
+function brokerDown() {
+  _brokerDownCount += 1;
+  nextBroker();
+  return _brokerDownCount < PEER_BROKERS.length * 2;
+}
+
+// Buat Peer dengan watchdog: kalau broker mati (open tak kunjung tiba dalam X detik),
+// hancurkan & panggil opts.onBrokerDown supaya caller mencoba broker berikutnya.
+function makePeer(id, opts) {
+  const o = opts || {};
+  const peer = new Peer(id, peerConfig(_brokerIdx));
+  peer._brokerName = currentBrokerName();
+  let opened = false;
+  peer.on('open', () => {
+    opened = true;
+    _brokerDownCount = 0;
+    clearTimeout(peer._watchdog);
+  });
+  peer._watchdog = setTimeout(() => {
+    if (!opened && !peer.destroyed) {
+      try { peer.destroy(); } catch (e) { /* ignore */ }
+      if (typeof o.onBrokerDown === 'function') o.onBrokerDown(peer);
+    }
+  }, o.openTimeout || 9000);
+  return peer;
 }
 
 const EMOTES = [
@@ -211,6 +250,238 @@ function cardFace(card) {
 function cardButtonHTML(card, idx, playable, selected = false) {
   const cls = `uno-card ${cardColorClass(card)}${playable ? ' playable' : ''}${selected ? ' selected' : ''}`;
   return `<button class="${cls}" data-index="${idx}" data-value="${card.value}">${cardFace(card)}</button>`;
+}
+
+/* ============================================
+   ANIMASI — kartu terbang, burst teks, confetti
+   (WAAPI, tanpa library eksternal)
+   ============================================ */
+
+const COLOR_HEX = {
+  red: '#ff4d4d',
+  yellow: '#ffd400',
+  green: '#22c55e',
+  blue: '#2563eb'
+};
+
+function cardRectFromHand(idx) {
+  const el = DOM.myHand.querySelector(`.uno-card[data-index="${idx}"]`);
+  return el ? el.getBoundingClientRect() : null;
+}
+
+function seatRect(idx) {
+  const el = DOM.seats.querySelector(`.seat[data-pid="${idx}"]`);
+  return el ? el.getBoundingClientRect() : null;
+}
+
+function centerOf(el) {
+  if (!el) return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+  const r = el.getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+}
+
+// Klon kartu terbang dari titik asal ke titik tujuan (discard / tangan / seat).
+function animateCardTo(fromRect, toRect, card, opts) {
+  if (!fromRect || !toRect) return;
+  const o = opts || {};
+  const w = Math.max(50, Math.min(88, fromRect.width || 72));
+  const h = Math.round(w * 1.45);
+  const el = document.createElement('div');
+  if (o.back) {
+    el.className = 'fly-card deck-back';
+  } else {
+    el.className = 'fly-card ' + cardColorClass(card);
+    el.innerHTML = cardFace(card);
+  }
+  el.style.width = w + 'px';
+  el.style.height = h + 'px';
+  document.body.appendChild(el);
+
+  const sx = fromRect.left + fromRect.width / 2;
+  const sy = fromRect.top + fromRect.height / 2;
+  const ex = toRect.left + toRect.width / 2;
+  const ey = toRect.top + toRect.height / 2;
+  const dx = ex - sx;
+  const dy = ey - sy;
+  const rot = o.rot !== undefined ? o.rot : (Math.random() * 16 - 8);
+
+  el.style.left = sx + 'px';
+  el.style.top = sy + 'px';
+  if (typeof el.animate !== 'function') {
+    el.remove();
+    return;
+  }
+  const anim = el.animate([
+    { transform: 'translate(-50%, -50%) rotate(0deg) scale(1)', opacity: 1 },
+    { transform: `translate(calc(-50% + ${dx * 0.4}px), calc(-50% + ${dy * 0.35}px)) rotate(${rot}deg) scale(.97)`, opacity: 1 },
+    { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) rotate(0deg) scale(.9)`, opacity: .95 }
+  ], {
+    duration: o.dur || 400,
+    easing: 'cubic-bezier(.25,.6,.4,1)'
+  });
+  anim.onfinish = () => el.remove();
+}
+
+// Kartu "belakang" terbang dari deck ke dock tangan saya.
+function animateDeckToHand() {
+  const from = DOM.drawPile.getBoundingClientRect();
+  const to = DOM.playerDock.getBoundingClientRect();
+  animateCardTo(from, to, null, { dur: 340, back: true, rot: -8 });
+}
+
+// Pulse animasi saat deck diacak ulang dari buangan.
+function animateDeckRefill() {
+  const el = DOM.drawPile;
+  if (!el) return;
+  el.classList.remove('deck-refill');
+  void el.offsetWidth;
+  el.classList.add('deck-refill');
+  setTimeout(() => el.classList.remove('deck-refill'), 900);
+}
+
+function animateCardPlayed(playerIdx, cardIdx, played) {
+  const isMe = myIndex() === playerIdx;
+  const from = isMe ? cardRectFromHand(cardIdx) : seatRect(playerIdx);
+  const to = DOM.discardPile.getBoundingClientRect();
+  if (from && to) {
+    animateCardTo(from, to, played, { dur: 380 });
+    playSound('play');
+  }
+}
+
+function animateCardPlayedPair(playerIdx, idxA, idxB, cardA, cardB) {
+  const isMe = myIndex() === playerIdx;
+  const last = Math.max(idxA, idxB);
+  const first = Math.min(idxA, idxB);
+  const fromA = isMe ? cardRectFromHand(first) : seatRect(playerIdx);
+  const fromB = isMe ? cardRectFromHand(last) : seatRect(playerIdx);
+  const to = DOM.discardPile.getBoundingClientRect();
+  if (fromA && to) animateCardTo(fromA, to, cardA, { dur: 380 });
+  if (fromB && to) setTimeout(() => animateCardTo(fromB, to, cardB, { dur: 380 }), 90);
+  playSound('play');
+}
+
+function animateCardDraw(playerIdx, card) {
+  const isMe = myIndex() === playerIdx;
+  const from = DOM.drawPile.getBoundingClientRect();
+  const to = isMe ? DOM.playerDock.getBoundingClientRect() : seatRect(playerIdx);
+  if (from && to) {
+    animateCardTo(from, to, card, { dur: 340, back: true, rot: -7 });
+    playSound('draw');
+  }
+}
+
+// Teks melayang di atas seat (skip / reverse / +2 / +4 / wild).
+function burstText(text, x, y, cls) {
+  const el = document.createElement('div');
+  el.className = 'burst-text ' + (cls || '');
+  el.textContent = text;
+  el.style.left = x + 'px';
+  el.style.top = y + 'px';
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 950);
+}
+
+function spinReverse() {
+  const el = DOM.discardPile;
+  if (!el) return;
+  el.classList.remove('reverse-spin');
+  void el.offsetWidth;
+  el.classList.add('reverse-spin');
+  setTimeout(() => el.classList.remove('reverse-spin'), 650);
+}
+
+function triggerWildFlash(color) {
+  const pile = DOM.discardPile;
+  if (!pile) return;
+  const hex = COLOR_HEX[color] || '#ffd400';
+  pile.style.setProperty('--glow', hex);
+  pile.classList.remove('wild-flash');
+  void pile.offsetWidth;
+  pile.classList.add('wild-flash');
+  setTimeout(() => pile.classList.remove('wild-flash'), 750);
+}
+
+// Efek aksi kartu di atas seat target.
+function triggerActionEffect(card, whoIdx) {
+  if (!card) return;
+  const seat = DOM.seats.querySelector(`.seat[data-pid="${whoIdx}"]`);
+  const pos = centerOf(seat);
+  if (card.value === 'skip') {
+    burstText('⏭ SKIP!', pos.x, pos.y, 'burst-skip');
+    playSound('skip');
+  } else if (card.value === 'reverse') {
+    burstText('🔄 REVERSE!', pos.x, pos.y, 'burst-reverse');
+    spinReverse();
+    playSound('reverse');
+  } else if (card.value === 'draw2') {
+    burstText('+2', pos.x, pos.y, 'burst-draw');
+  } else if (card.value === 'wild4') {
+    burstText('+4', pos.x, pos.y, 'burst-draw');
+    playSound('draw');
+  } else if (card.value === 'wild') {
+    burstText('🃏 WILD', pos.x, pos.y, 'burst-wild');
+    playSound('wild');
+  }
+}
+
+// Partikel confetti saat menang.
+function confettiBurst(x, y) {
+  const colors = ['#ffd400', '#ff4d4d', '#22c55e', '#2563eb', '#ff7a00', '#a855f7'];
+  for (let i = 0; i < 30; i += 1) {
+    const p = document.createElement('div');
+    p.className = 'confetti';
+    p.style.left = x + 'px';
+    p.style.top = y + 'px';
+    p.style.background = colors[i % colors.length];
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 70 + Math.random() * 180;
+    p.style.setProperty('--tx', Math.cos(angle) * dist + 'px');
+    p.style.setProperty('--ty', Math.sin(angle) * dist - 70 + 'px');
+    p.style.setProperty('--rot', (Math.random() * 720 - 360) + 'deg');
+    p.style.animationDelay = (Math.random() * 0.15) + 's';
+    document.body.appendChild(p);
+    setTimeout(() => p.remove(), 1500);
+  }
+}
+
+// Optimistic play (online): kartu langsung hilang dari tangan & terbang ke meja
+// SEBELUM balasan host — terasa instan tanpa delay.
+function optimisticPlay(idx, color) {
+  const me = myPlayer();
+  if (!me || !me.hand) return;
+  const card = me.hand[idx];
+  if (!card) return;
+  gameState._optTs = Date.now();
+  const from = cardRectFromHand(idx);
+  const to = DOM.discardPile.getBoundingClientRect();
+  if (from && to) {
+    animateCardTo(from, to, card, { dur: 380 });
+    playSound('play');
+  }
+  me.hand.splice(idx, 1);
+  renderPlayerDock();
+  if (color && (card.value === 'wild' || card.value === 'wild4')) triggerWildFlash(color);
+}
+
+function optimisticPlayPair(idxA, idxB, color) {
+  const me = myPlayer();
+  if (!me || !me.hand) return;
+  const cardA = me.hand[idxA];
+  const cardB = me.hand[idxB];
+  if (!cardA || !cardB) return;
+  gameState._optTs = Date.now();
+  const last = Math.max(idxA, idxB);
+  const first = Math.min(idxA, idxB);
+  const to = DOM.discardPile.getBoundingClientRect();
+  const fromA = cardRectFromHand(first);
+  const fromB = cardRectFromHand(last);
+  if (fromA && to) animateCardTo(fromA, to, cardA, { dur: 380 });
+  if (fromB && to) setTimeout(() => animateCardTo(fromB, to, cardB, { dur: 380 }), 90);
+  playSound('play');
+  me.hand.splice(last, 1);
+  me.hand.splice(first, 1);
+  renderPlayerDock();
 }
 
 /* ============================================
@@ -445,7 +716,7 @@ function setConnectionState(state, text) {
 
 function showDisconnectBanner(text) {
   if (!DOM.disconnectBanner) return;
-  DOM.disconnectBanner.textContent = text || '⚠️ Koneksi Terputus — mencoba menghubungkan ulang...';
+  DOM.disconnectBanner.textContent = text || 'Menghubungkan kembali...';
   DOM.disconnectBanner.classList.remove('hidden');
 }
 
@@ -456,8 +727,15 @@ function hideDisconnectBanner() {
 
 function showWinnerOverlay(name) {
   if (!DOM.winnerOverlay) return;
+  const wasHidden = DOM.winnerOverlay.classList.contains('hidden');
   DOM.winnerNameEl.textContent = name || 'Pemain';
   DOM.winnerOverlay.classList.remove('hidden');
+  if (wasHidden) {
+    confettiBurst(window.innerWidth / 2, window.innerHeight / 2);
+    setTimeout(() => confettiBurst(window.innerWidth * 0.28, window.innerHeight * 0.45), 220);
+    setTimeout(() => confettiBurst(window.innerWidth * 0.72, window.innerHeight * 0.45), 460);
+    setTimeout(() => confettiBurst(window.innerWidth / 2, window.innerHeight * 0.3), 700);
+  }
 }
 
 function hideWinnerOverlay() {
@@ -524,6 +802,11 @@ function playSound(type = 'click') {
   const sounds = {
     click: { freq: 520, dur: 0.08, type: 'triangle' },
     draw: { freq: 300, dur: 0.12, type: 'sawtooth' },
+    play: { freq: 700, dur: 0.07, type: 'square' },
+    wild: { freq: 520, dur: 0.16, type: 'sine' },
+    skip: { freq: 880, dur: 0.09, type: 'square' },
+    reverse: { freq: 440, dur: 0.1, type: 'sine' },
+    shuffle: { freq: 240, dur: 0.18, type: 'sawtooth' },
     win: { freq: 720, dur: 0.25, type: 'square' },
     action: { freq: 440, dur: 0.11, type: 'sine' }
   };
@@ -758,6 +1041,9 @@ function replenishDeck() {
     gameState.discard = [top];
     gameState.deckCount = gameState.deck.length;
     addLog('🔄 Tumpukan buangan diacak kembali menjadi kartu draw!');
+    animateDeckRefill();
+    showToast('🔄 Deck habis — kartu buangan diacak lagi');
+    playSound('shuffle');
     return;
   }
 
@@ -765,6 +1051,7 @@ function replenishDeck() {
   // (refresh seperti awal angkanya) agar permainan tidak pernah macet tanpa kartu.
   gameState.deck = createDeckFor(gameState.players.length || 2);
   gameState.deckCount = gameState.deck.length;
+  animateDeckRefill();
   addLog('🔄 Tumpukan kartu habis! Mengisi ulang dengan kartu baru dari awal.');
 }
 
@@ -788,6 +1075,7 @@ function drawCardFor(playerIdx) {
   const card = gameState.deck.pop();
   if (!card) return null;
   gameState.players[playerIdx].hand.push(card);
+  animateCardDraw(playerIdx, card);
   return card;
 }
 
@@ -818,8 +1106,8 @@ function roomPlayCard(playerIdx, cardIdx, color = null) {
   }
   setActiveColor(played, color);
   gameState.discard.push(played);
+  animateCardPlayed(playerIdx, cardIdx, played);
   addLog(`${player.name} main ${getCardLabel(card)}`);
-  playSound('click');
 
   if (player.hand.length === 0) {
     gameState.winner = player;
@@ -847,6 +1135,7 @@ function roomPlayCard(playerIdx, cardIdx, color = null) {
   if (card.value === 'skip') {
     nextIdx = nextTurn(nextIdx);
     nextIdx = nextTurn(nextIdx);
+    triggerActionEffect(card, nextIdx);
     addLog('⏭ Skip!');
     if (player.isBot) botSpeak(playerIdx, 'skip');
   } else if (card.value === 'reverse') {
@@ -854,11 +1143,13 @@ function roomPlayCard(playerIdx, cardIdx, color = null) {
     if (gameState.players.length === 2) {
       nextIdx = nextTurn(nextIdx);
     }
+    triggerActionEffect(card, playerIdx);
     addLog('🔄 Reverse!');
   } else if (card.value === 'draw2') {
     nextIdx = nextTurn(nextIdx);
     const target = gameState.players[nextIdx];
     for (let i = 0; i < 2; i += 1) drawCardFor(nextIdx);
+    triggerActionEffect(card, nextIdx);
     addLog(`${target.name} ambil +2`);
     playSound('action');
     if (target.isBot) botSpeak(nextIdx, 'draw2');
@@ -867,12 +1158,15 @@ function roomPlayCard(playerIdx, cardIdx, color = null) {
     nextIdx = nextTurn(nextIdx);
     const target = gameState.players[nextIdx];
     for (let i = 0; i < 4; i += 1) drawCardFor(nextIdx);
+    triggerActionEffect(card, nextIdx);
     addLog(`${target.name} ambil +4`);
     playSound('action');
     if (target.isBot) botSpeak(nextIdx, 'draw4');
     nextIdx = nextTurn(nextIdx);
   } else {
     nextIdx = nextTurn(nextIdx);
+    triggerActionEffect(card, playerIdx);
+    if (card.color === 'wild' || card.value === 'wild4') triggerWildFlash(played.chosenColor || gameState.currentColor);
     if (player.isBot && Math.random() < 0.4) botSpeak(playerIdx, 'play');
   }
 
@@ -1022,6 +1316,7 @@ function roomPlayPair(playerIdx, cardIdxA, cardIdxB, color = null) {
   setActiveColor(playedSecond, color);
   gameState.discard.push(playedFirst);
   gameState.discard.push(playedSecond);
+  animateCardPlayedPair(playerIdx, cardIdxA, cardIdxB, playedFirst, playedSecond);
   addLog(`${player.name} main dobel ${getCardLabel(first)}`);
   playSound('click');
 
@@ -1205,6 +1500,18 @@ function broadcastState() {
 }
 
 function applyStatePayload(data) {
+  // Snapshot kondisi lama (untuk deteksi animasi di sisi client online)
+  const isClient = !gameState.isHost;
+  const oldIdx = gameState.playerIndex;
+  const prevTopId = gameState.lastTopId;
+  const prevCur = gameState.currentPlayer;
+  const prevMyLen = (gameState.players[oldIdx] && gameState.players[oldIdx].hand)
+    ? gameState.players[oldIdx].hand.length
+    : 0;
+  const prevCounts = new Map((gameState.players || []).map((p) => [p.id, opponentHandCount(p)]));
+  const prevDeck = gameState.deckCount;
+  const prevColor = gameState.currentColor;
+
   gameState.isOnline = true;
   gameState.roomCode = data.roomCode || data.code || gameState.roomCode;
   gameState.gameStarted = !!data.started;
@@ -1249,6 +1556,53 @@ function applyStatePayload(data) {
     showScreen('gameplay');
     DOM.roomInfoDisplay.textContent = `Room: ${gameState.roomCode}`;
   }
+
+  // ===== ANIMASI KLIENT (deteksi perubahan state dari host) =====
+  if (isClient) {
+    const newTop = gs.discardTop;
+    // Giliran saya baru saja main secara optimis? (untuk menghindari animasi dobel)
+    const ownPlay = gameState._optTs && (Date.now() - gameState._optTs) < 700;
+    gameState._optTs = 0;
+    // Deck diacak ulang dari buangan -> deckCount melonjak naik
+    if (gs.deckCount > prevDeck) animateDeckRefill();
+    // Kartu baru masuk tangan saya -> kartu terbang deck -> tangan
+    const newMyLen = (gameState.players[gs.playerIndex] && gameState.players[gs.playerIndex].hand)
+      ? gameState.players[gs.playerIndex].hand.length
+      : 0;
+    if (newMyLen > prevMyLen) {
+      animateDeckToHand();
+      playSound('draw');
+    }
+    // Lawan ambil kartu (+2/+4) -> kartu terbang deck -> seat mereka
+    gameState.players.forEach((p, i) => {
+      if (i === gs.playerIndex) return;
+      const before = prevCounts.get(p.id);
+      if (before !== undefined && opponentHandCount(p) > before) {
+        const from = DOM.drawPile.getBoundingClientRect();
+        const to = seatRect(i);
+        if (from && to) animateCardTo(from, to, null, { dur: 340, back: true, rot: -7 });
+      }
+    });
+    // Kartu atas berubah -> animasi main kartu (dari seat/giliran sebelumnya)
+    if (newTop && prevTopId && prevTopId !== newTop.id) {
+      const who = prevCur;
+      const meNow = gs.playerIndex;
+      if (!ownPlay) {
+        const from = who === meNow ? DOM.playerDock.getBoundingClientRect() : seatRect(who);
+        const to = DOM.discardPile.getBoundingClientRect();
+        if (from && to) {
+          animateCardTo(from, to, newTop, { dur: 380 });
+          playSound('play');
+        }
+      }
+      triggerActionEffect(newTop, who);
+    }
+    // Wild/+4 -> flash warna aktif (lewati bila sudah flash saat main optimis)
+    if (newTop && (newTop.value === 'wild' || newTop.value === 'wild4') && gs.currentColor && gs.currentColor !== prevColor) {
+      if (!ownPlay) triggerWildFlash(gs.currentColor);
+    }
+  }
+
   renderGameplay();
 
   if (gameState.winner) {
@@ -1288,7 +1642,7 @@ function startResync() {
     if (gameState.gameStarted && gameState.players.length && !gameState.winner) {
       broadcastState();
     }
-  }, 3000);
+  }, 2000);
 }
 
 function stopResync() {
@@ -1311,7 +1665,7 @@ function startStatePolling() {
       gameState.conn.send({ type: 'SYNC_REQ' });
     }
     // Lebih cepat di ruang tunggu (cegah stuck), lebih longgar saat gameplay (resync host sudah jalan).
-    const ms = gameState.screenState === 'gameplay' ? 4000 : 2000;
+    const ms = gameState.screenState === 'gameplay' ? 2000 : 1500;
     gameState.pollTimer = setTimeout(tick, ms);
   };
   tick();
@@ -1371,9 +1725,20 @@ function spawnHostPeer() {
   const code = randomCode(6);
   const peerId = PEER_PREFIX + code;
 
-  const peer = new Peer(peerId, peerConfig());
+  let peer;
+  peer = makePeer(peerId, {
+    onBrokerDown: () => {
+      if (gameState.peer !== peer) return;
+      if (!brokerDown()) {
+        updateServerStatus();
+        showToast('Broker tidak tersedia. Coba lagi.');
+        return;
+      }
+      gameState.peer = null;
+      spawnHostPeer();
+    }
+  });
   gameState.peer = peer;
-
 
   peer.on('open', () => {
     gameState.roomCode = code;
@@ -1410,21 +1775,25 @@ function spawnHostPeer() {
   });
 
   peer.on('disconnected', () => {
-    showDisconnectBanner('⚠️ Koneksi Terputus — mencoba menghubungkan ulang...');
-    if (gameState.peer && !gameState.peer.destroyed) {
+    if (gameState.peer !== peer) return;
+    showDisconnectBanner('Menghubungkan kembali...');
+    if (!peer.destroyed) {
       setTimeout(() => {
-        try {
-          gameState.peer.reconnect();
-        } catch (e) {
-          // ignore
+        if (gameState.peer === peer && !peer.destroyed) {
+          try {
+            peer.reconnect();
+          } catch (e) {
+            // ignore
+          }
         }
       }, 1200);
     }
   });
 
   peer.on('error', (err) => {
+    if (gameState.peer !== peer) return;
     if (err.type === 'unavailable-id') {
-      peer.destroy();
+      try { peer.destroy(); } catch (e) { /* ignore */ }
       gameState.peer = null;
       spawnHostPeer();
       return;
@@ -1450,13 +1819,24 @@ function handleHostData(conn, data) {
       }
 
       if (existing) {
+        const wasBot = existing.isBot;
         existing.id = conn.peer;
         existing.conn = conn;
-        existing.name = playerInfo.name || existing.name;
-        existing.avatar = playerInfo.avatar || existing.avatar;
+        existing.isBot = false;
+        existing.name = playerInfo.name || existing.name.replace(/\s*🤖\s*$/, '');
+        existing.avatar = playerInfo.avatar || (existing.avatar === '🤖' ? '👤' : existing.avatar);
         clearTimeout(existing.disconnectTimer);
         existing.disconnectTimer = null;
+        if (wasBot) {
+          addLog(`${existing.name} kembali — lanjut main 🤝`);
+          showToast(`${existing.name} kembali!`);
+        }
         if (gameState.gameStarted) {
+          // Kalau pemain ini sedang pilih warna Wild saat putus, kirim ulang
+          // PENDING_WILD supaya color picker muncul lagi (anti-stuck giliran).
+          if (gameState.pendingWild !== null && existing === gameState.players[gameState.currentPlayer]) {
+            conn.send({ type: 'PENDING_WILD', cardIndex: gameState.pendingWild });
+          }
           // Kirim state penuh agar pemain langsung kembali ke arena game yang benar.
           conn.send(makeStatePayload('SYNC_STATE', gameState.players.indexOf(existing)));
           return;
@@ -1594,11 +1974,11 @@ function handleClientDisconnect(conn) {
   const player = gameState.players[idx];
   const name = player.name;
 
-  // Grace period: beri kesempatan pemain sambung ulang (mis. reload halaman) sebelum dikeluarkan.
+  // Grace period: beri kesempatan pemain sambung ulang (mis. reload halaman) sebelum diganti bot.
   if (gameState.gameStarted && !player.isBot && !player.disconnectTimer) {
     player.disconnectTimer = setTimeout(() => {
       finishClientDisconnect(conn, name);
-    }, 5000);
+    }, 8000);
     addLog(`${name} putus — menunggu sambung ulang...`);
     return;
   }
@@ -1613,24 +1993,51 @@ function finishClientDisconnect(conn, name) {
   const idx = gameState.players.findIndex((p) => p.id === conn.peer);
   if (idx === -1) return;
   clearTimeout(gameState.players[idx].disconnectTimer);
-  gameState.players.splice(idx, 1);
+  gameState.players[idx].disconnectTimer = null;
 
   const connIdx = gameState.connections.indexOf(conn);
   if (connIdx !== -1) gameState.connections.splice(connIdx, 1);
 
+  // Game sudah berjalan: ganti pemain yang putus dengan BOT (tangan dipertahankan)
+  // supaya game tidak berhenti & tidak ada yang "stuck" — anti-gangguan mabar.
+  if (gameState.gameStarted) {
+    const p = gameState.players[idx];
+
+    // Pemain ini lagi memilih warna Wild tapi putus -> selesaikan otomatis
+    // (kalau dibiarkan, gilirannya macet selamanya = stuck).
+    if (idx === gameState.currentPlayer && gameState.pendingWild !== null && p.hand) {
+      const pendingIdx = gameState.pendingWild;
+      gameState.pendingWild = null;
+      if (pendingIdx >= 0 && pendingIdx < p.hand.length) {
+        roomPlayCard(idx, pendingIdx, COLORS[Math.floor(Math.random() * 4)]);
+      } else {
+        gameState.currentPlayer = nextTurn(idx);
+      }
+    }
+
+    if (!gameState.winner) {
+      p.isBot = true;
+      p.isMe = false;
+      p.isHost = false;
+      p.conn = null;
+      p.avatar = '🤖';
+      p.hasUno = false;
+      if (p.name !== 'Bot') p.name = (p.name || name || 'Pemain') + ' 🤖';
+      addLog(`${name} putus — diganti bot 🤖`);
+      showToast(`${name} putus — game lanjut dengan bot`);
+      playSound('action');
+      broadcastState();
+      hostBotTurn();
+      return;
+    }
+    broadcastState();
+    return;
+  }
+
+  // Belum mulai game: hapus dari daftar saja.
+  gameState.players.splice(idx, 1);
   addLog(`${name} keluar`);
 
-  if (gameState.gameStarted) {
-    gameState.gameStarted = false;
-    gameState.discard = [];
-    gameState.deck = [];
-    gameState.winner = null;
-    gameState.currentColor = null;
-    for (const p of gameState.players) p.hand = [];
-    hideWinnerOverlay();
-    showToast('Game dihentikan: ada pemain keluar');
-    stopResync();
-  }
   if (gameState.isPublic) lobbyRegister();
   broadcastState();
 }
@@ -1713,7 +2120,18 @@ function makeLobbyRoomInfo() {
 // Coba jadi keeper lobby; jika ID sudah dipakai orang lain, jadi client.
 function lobbyEnsure() {
   if (gameState.lobby.peer && !gameState.lobby.peer.destroyed) return;
-  const p = new Peer(LOBBY_PEER_ID, peerConfig());
+  let p;
+  p = makePeer(LOBBY_PEER_ID, {
+    onBrokerDown: () => {
+      if (gameState.lobby.peer !== p) return;
+      if (!brokerDown()) {
+        gameState.lobby.peer = null;
+        return;
+      }
+      gameState.lobby.peer = null;
+      lobbyEnsure();
+    }
+  });
   gameState.lobby.peer = p;
   gameState.lobby.keeper = false;
 
@@ -1760,7 +2178,19 @@ function lobbyEnsure() {
 }
 
 function lobbyConnectClient() {
-  const p = new Peer(undefined, peerConfig());
+  let p;
+  p = makePeer(undefined, {
+    onBrokerDown: () => {
+      if (gameState.lobby.peer !== p) return;
+      if (!brokerDown()) {
+        gameState.lobby.peer = null;
+        return;
+      }
+      try { if (!p.destroyed) p.destroy(); } catch (e) { /* ignore */ }
+      gameState.lobby.peer = null;
+      lobbyConnectClient();
+    }
+  });
   gameState.lobby.peer = p;
 
   p.on('open', () => {
@@ -2108,13 +2538,22 @@ async function checkServerHealth() {
   renderLeaderboard();
 }
 
-// Status indikator murni dari kesehatan server (Vercel/Neon),
-// tidak dipengaruhi fluktuasi koneksi PeerJS broker.
+// Status indikator: fokus pada koneksi P2P (yang dipakai gameplay).
+// Status "Offline" merah tidak pernah ditampilkan agar tidak mengganggu pemain —
+// cukup tampil netral "Menghubungkan..." saat server API tak terjangkau.
 function updateServerStatus() {
-  setConnectionState(
-    gameState.auth.serverOk ? 'online' : 'offline',
-    gameState.auth.serverOk ? 'Server Online' : 'Server Offline'
-  );
+  if (gameState.connected) {
+    setConnectionState(
+      'online',
+      gameState.isOnline ? 'P2P Terhubung' : 'Terhubung'
+    );
+    return;
+  }
+  if (gameState.auth.serverOk) {
+    setConnectionState('online', 'Server Online');
+  } else {
+    setConnectionState('connecting', 'Menghubungkan...');
+  }
 }
 
 /* ============================================
@@ -2181,12 +2620,17 @@ function renderLeaderboard() {
    ============================================ */
 
 let joinTimeout = null;
+let _joinAttempts = 0;
+let _joinActive = false;
 
-function joinRoom(code) {
+function joinRoom(code, isReconnect) {
   resetOnlineState();
+  _joinActive = true;
+  if (!isReconnect) _joinAttempts = 0;
   gameState.gameMode = 'online';
   gameState.isOnline = true;
   gameState.isHost = false;
+  rejoining = false;
 
   const cleanCode = (code || '').trim().toUpperCase();
   if (!cleanCode) {
@@ -2198,7 +2642,39 @@ function joinRoom(code) {
   const session = loadSession();
   const resumeId = (session && session.code === cleanCode && session.playerId) || null;
 
-  const peer = new Peer(undefined, peerConfig());
+  const failRetry = () => {
+    if (!_joinActive) return;
+    _joinActive = false;
+    _joinAttempts += 1;
+    if (_joinAttempts >= PEER_BROKERS.length * 2) {
+      updateServerStatus();
+      if (gameState.screenState === 'gameplay' || gameState.screenState === 'room') {
+        clearSession();
+        leaveGame();
+      } else {
+        DOM.joinPrivateBtn.disabled = false;
+        DOM.joinPrivateBtn.textContent = 'GABUNG';
+        showToast('Room tidak ditemukan. Periksa kode & koneksi.');
+      }
+      return;
+    }
+    nextBroker();
+    try {
+      if (gameState.peer && !gameState.peer.destroyed) gameState.peer.destroy();
+    } catch (e) { /* ignore */ }
+    gameState.peer = null;
+    gameState.conn = null;
+    setTimeout(() => {
+      if (!gameState.connected) joinRoom(code, true);
+    }, 700);
+  };
+
+  let peer;
+  peer = makePeer(undefined, {
+    onBrokerDown: () => {
+      if (gameState.peer === peer) failRetry();
+    }
+  });
   gameState.peer = peer;
 
   peer.on('open', () => {
@@ -2212,6 +2688,10 @@ function joinRoom(code) {
 
     conn.on('open', () => {
       gameState.connected = true;
+      _joinActive = false;
+      _joinAttempts = 0;
+      rejoinAttempts = 0;
+      rejoining = false;
       hideDisconnectBanner();
       updateServerStatus();
       conn.send({
@@ -2243,30 +2723,34 @@ function joinRoom(code) {
   });
 
   peer.on('disconnected', () => {
-    showDisconnectBanner('⚠️ Koneksi Terputus — mencoba menghubungkan ulang...');
-    if (gameState.peer && !gameState.peer.destroyed) {
+    if (gameState.peer !== peer || rejoining) return;
+    showDisconnectBanner('Menghubungkan kembali...');
+    if (!peer.destroyed) {
       setTimeout(() => {
-        try {
-          gameState.peer.reconnect();
-        } catch (e) {
-          // ignore
+        if (gameState.peer === peer && !peer.destroyed && !rejoining) {
+          try {
+            peer.reconnect();
+          } catch (e) {
+            // ignore
+          }
         }
       }, 1200);
     }
   });
 
   peer.on('error', (err) => {
+    if (gameState.peer !== peer) return;
+    if (err.type === 'peer-unavailable' || err.type === 'server-error' || err.type === 'socket-error' || err.type === 'network') {
+      failRetry();
+      return;
+    }
     clearTimeout(joinTimeout);
     stopStatePolling();
+    _joinActive = false;
     DOM.joinPrivateBtn.disabled = false;
     DOM.joinPrivateBtn.textContent = 'GABUNG';
-    if (err.type === 'peer-unavailable') {
-      updateServerStatus();
-      showToast('Room tidak ditemukan. Periksa kode.');
-    } else {
-      updateServerStatus();
-      showToast('Gagal terhubung: ' + err.type);
-    }
+    updateServerStatus();
+    showToast('Gagal terhubung: ' + err.type);
   });
 }
 
@@ -2278,6 +2762,10 @@ function handleClientData(data) {
     case 'ROOM_UPDATE':
     case 'SYNC_STATE':
       clearTimeout(joinTimeout);
+      _joinActive = false;
+      rejoinAttempts = 0;
+      rejoining = false;
+      hideDisconnectBanner();
       applyStatePayload(data);
       break;
 
@@ -2310,9 +2798,31 @@ function handleClientData(data) {
   }
 }
 
+// Auto-rejoin: kalau koneksi ke host drop, jangan langsung keluar.
+// Coba sambung ulang ke room yang sama (resumeId) beberapa kali dulu.
+let rejoinAttempts = 0;
+let rejoining = false;
+const MAX_REJOIN = 3;
+
 function handleHostDisconnect() {
   clearTimeout(joinTimeout);
   stopStatePolling();
+  const code = gameState.roomCode;
+  if ((gameState.screenState === 'gameplay' || gameState.screenState === 'room') && code && !rejoining && rejoinAttempts < MAX_REJOIN) {
+    rejoining = true;
+    rejoinAttempts += 1;
+    showDisconnectBanner(`Menghubungkan kembali... (${rejoinAttempts}/${MAX_REJOIN})`);
+    try {
+      if (gameState.peer && !gameState.peer.destroyed) gameState.peer.destroy();
+    } catch (e) { /* ignore */ }
+    gameState.peer = null;
+    gameState.conn = null;
+    setTimeout(() => {
+      rejoining = false;
+      if (!gameState.connected) joinRoom(code, true);
+    }, 2500);
+    return;
+  }
   clearSession();
   showToast('Host keluar dari room');
   leaveGame();
@@ -2324,6 +2834,9 @@ function handleHostDisconnect() {
 
 function resetOnlineState() {
   clearTimeout(joinTimeout);
+  _joinActive = false;
+  rejoinAttempts = 0;
+  rejoining = false;
   stopResync();
   stopStatePolling();
   gameState.roomCode = '';
@@ -2859,6 +3372,7 @@ function sendAction(action, d = {}) {
 
 function playMyCard(idx, color) {
   if (gameState.isOnline) {
+    if (!gameState.isHost) optimisticPlay(idx, color);
     sendAction('PLAY_CARD', { cardIndex: idx, chosenColor: color });
   } else if (roomPlayCard(0, idx, color)) afterRoomChange();
 }
@@ -2866,6 +3380,7 @@ function playMyCard(idx, color) {
 // Mainkan 2 kartu dobel sekaligus (angka sama, warna boleh beda).
 function playMyPair(idxA, idxB, color) {
   if (gameState.isOnline) {
+    if (!gameState.isHost) optimisticPlayPair(idxA, idxB, color);
     sendAction('PLAY_PAIR', { cardIndices: [idxA, idxB], chosenColor: color });
   } else if (roomPlayPair(0, idxA, idxB, color)) afterRoomChange();
 }
@@ -3175,6 +3690,7 @@ DOM.colorButtons.forEach((btn) => {
     DOM.colorPicker.classList.add('hidden');
 
     if (gameState.isOnline) {
+      if (!gameState.isHost) optimisticPlay(idx, color);
       sendAction('PLAY_CARD', { cardIndex: idx, chosenColor: color });
     } else if (roomPlayCard(0, idx, color)) afterRoomChange();
   });
@@ -3308,6 +3824,7 @@ function init() {
   // Ambil daftar room publik & daftar pemain online saat lobby dibuka
   lobbyEnsure();
   setTimeout(lobbyRefresh, 2000);
+  setInterval(lobbyRefresh, 30000);
 
   // Recovery: jika halaman di-refresh di tengah permainan, sambung ulang ke room.
   tryAutoRejoin();
