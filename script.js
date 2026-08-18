@@ -39,6 +39,36 @@ const PEER_CONFIG = {
   }
 };
 
+// ===== RELAY (server opsional) =====
+// GitHub Pages HANYA file statis — TIDAK bisa menjalankan server.
+// Untuk status Online yang stabil + daftar room publik yang bisa diandalkan,
+// deploy folder server/ ke Render / Railway / Glitch (gratis), lalu:
+//   RELAY.enabled = true   dan   RELAY.host = '<url relay anda>'
+// Jika enabled=false, game memakai broker PeerJS publik (0.peerjs.com).
+const RELAY = {
+  enabled: false,
+  host: 'YOUR-APP.onrender.com',
+  port: 443,
+  path: '/peerjs',
+  secure: true
+};
+
+function peerConfig() {
+  const b = RELAY.enabled ? RELAY : { host: '0.peerjs.com', port: 443, path: '/', secure: true };
+  return {
+    host: b.host,
+    port: b.port,
+    path: b.path,
+    secure: b.secure,
+    debug: 1,
+    config: {
+      iceServers: [
+        { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }
+      ]
+    }
+  };
+}
+
 const EMOTES = [
   { e: '😄', s: 'cheer' },
   { e: '😂', s: 'laugh' },
@@ -199,6 +229,7 @@ const gameState = {
   connected: false,
   roomCapacity: 4,
   isPublic: false,
+  socket: null,
   botTimer: null,
   resyncTimer: null,
 
@@ -224,7 +255,8 @@ const gameState = {
     peer: null,
     conn: null,
     conns: new Set(),
-    rooms: []
+    rooms: [],
+    serverRooms: []
   },
   onlineUsers: [],
   lastTopId: null
@@ -1011,7 +1043,7 @@ function spawnHostPeer() {
   const code = randomCode(6);
   const peerId = PEER_PREFIX + code;
 
-  const peer = new Peer(peerId, PEER_CONFIG);
+  const peer = new Peer(peerId, peerConfig());
   gameState.peer = peer;
 
   setConnectionState('connecting', 'Menghubungkan...');
@@ -1036,6 +1068,7 @@ function spawnHostPeer() {
     if (gameState.isPublic) {
       lobbyEnsure();
       setTimeout(lobbyRegister, 1200);
+      setTimeout(socketRegisterRoom, 1200);
     }
   });
 
@@ -1289,9 +1322,64 @@ function makeLobbyRoomInfo() {
 }
 
 // Coba jadi keeper lobby; jika ID sudah dipakai orang lain, jadi client.
+/* ============================================
+   RELAY SOCKET.IO (server opsional)
+   - status server Online/Offline
+   - daftar room publik yang stabil (tanpa race "keeper")
+   ============================================ */
+function socketConnect() {
+  if (!window.io || !RELAY.enabled || gameState.socket) return;
+  try {
+    const s = io((RELAY.secure ? 'https://' : 'http://') + RELAY.host, {
+      transports: ['websocket', 'polling']
+    });
+    gameState.socket = s;
+
+    s.on('connect', () => {
+      setConnectionState('online', 'Server Online');
+      s.emit('rooms.get');
+      if (gameState.isHost && gameState.isPublic && gameState.roomCode) {
+        setTimeout(socketRegisterRoom, 400);
+      }
+    });
+
+    s.on('disconnect', () => {
+      if (!gameState.connected) setConnectionState('connecting', 'Server offline');
+    });
+
+    s.on('rooms.update', (rooms) => {
+      gameState.lobby.serverRooms = (rooms || []).filter((r) => r.isPublic);
+      renderPublicRooms();
+    });
+  } catch (e) {
+    console.warn('Socket.io tidak tersedia:', e);
+  }
+}
+
+function socketRegisterRoom() {
+  const s = gameState.socket;
+  if (!s || !s.connected) return;
+  s.emit('room.register', {
+    code: gameState.roomCode,
+    hostName: gameState.playerProfile.name || 'Pemain',
+    avatar: gameState.playerProfile.avatar || '👦',
+    capacity: gameState.roomCapacity,
+    players: gameState.players.length,
+    isPublic: true,
+    ts: Date.now()
+  });
+}
+
+function socketUnregisterRoom() {
+  const s = gameState.socket;
+  if (!s || !s.connected) return;
+  s.emit('room.unregister', gameState.roomCode);
+  gameState.lobby.serverRooms = gameState.lobby.serverRooms.filter((r) => r.code !== gameState.roomCode);
+}
+
 function lobbyEnsure() {
   if (gameState.lobby.peer && !gameState.lobby.peer.destroyed) return;
-  const p = new Peer(LOBBY_PEER_ID, PEER_CONFIG);
+  const p = new Peer(LOBBY_PEER_ID, peerConfig());
   gameState.lobby.peer = p;
   gameState.lobby.keeper = false;
 
@@ -1333,7 +1421,7 @@ function lobbyEnsure() {
 }
 
 function lobbyConnectClient() {
-  const p = new Peer(undefined, PEER_CONFIG);
+  const p = new Peer(undefined, peerConfig());
   gameState.lobby.peer = p;
 
   p.on('open', () => {
@@ -1415,6 +1503,9 @@ function lobbyUnregister() {
 }
 
 function lobbyRefresh() {
+  if (gameState.socket && gameState.socket.connected) {
+    gameState.socket.emit('rooms.get');
+  }
   if (gameState.lobby.keeper) {
     lobbyBroadcastList();
     return;
@@ -1443,7 +1534,14 @@ function lobbyRefresh() {
 
 function renderPublicRooms() {
   const list = DOM.publicRoomList;
-  const rooms = gameState.lobby.rooms.filter((r) => r.isPublic);
+  const merged = [];
+  const seen = new Set();
+  gameState.lobby.serverRooms.concat(gameState.lobby.rooms).forEach((r) => {
+    if (!r.isPublic || seen.has(r.code)) return;
+    seen.add(r.code);
+    merged.push(r);
+  });
+  const rooms = merged.sort((a, b) => (b.ts || 0) - (a.ts || 0));
   if (!rooms.length) {
     list.innerHTML = '<li class="list-empty">Belum ada room publik. Buat room atau segarkan.</li>';
     return;
@@ -1469,6 +1567,9 @@ function updateOnlineUsers() {
   gameState.lobby.rooms.forEach((r) => {
     if (r.hostName) users.add(r.hostName);
     (r.members || []).forEach((m) => users.add(m));
+  });
+  gameState.lobby.serverRooms.forEach((r) => {
+    if (r.hostName) users.add(r.hostName);
   });
   gameState.onlineUsers = [...users];
   renderOnlineUsers();
@@ -1553,7 +1654,7 @@ function joinRoom(code) {
   setConnectionState('connecting', 'Menghubungkan...');
   const targetId = PEER_PREFIX + cleanCode;
 
-  const peer = new Peer(undefined, PEER_CONFIG);
+  const peer = new Peer(undefined, peerConfig());
   gameState.peer = peer;
 
   peer.on('open', () => {
@@ -1697,7 +1798,10 @@ function resetOnlineState() {
 }
 
 function leaveGame() {
-  if (gameState.isPublic) lobbyUnregister();
+  if (gameState.isPublic) {
+    lobbyUnregister();
+    socketUnregisterRoom();
+  }
   if (gameState.peer) {
     try {
       gameState.peer.destroy();
@@ -2422,6 +2526,11 @@ function buildEmoteGrid() {
 function init() {
   showScreen('lobby');
 
+  // Relay server (jika aktif) untuk status Online + daftar room publik stabil
+  socketConnect();
+  lobbyEnsure();
+  setTimeout(lobbyRefresh, 2000);
+
   // Dropdown kapasitas room 2-8 pemain
   for (let n = 2; n <= MAX_PLAYERS; n += 1) {
     const opt = document.createElement('option');
@@ -2432,6 +2541,9 @@ function init() {
   }
   DOM.roomCapacity.addEventListener('change', () => {
     gameState.roomCapacity = parseInt(DOM.roomCapacity.value, 10) || 4;
+    if (gameState.isHost && gameState.isPublic) {
+      setTimeout(socketRegisterRoom, 300);
+    }
   });
 
   DOM.playerNameInput.value = gameState.playerProfile.name;
