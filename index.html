@@ -131,19 +131,21 @@
   </header>
 
   <div class="arena">
+    <div id="seats" class="seats"></div>
+
     <div class="table">
-      <div class="table-center">
+      <div class="table-info">
+        <span id="turn-indicator" class="turn-indicator">Mempersiapkan...</span>
+        <span id="active-color-indicator" class="active-color-indicator"></span>
+      </div>
+      <div class="pile-row">
         <button id="draw-pile" class="deck-card deck-back" title="Ambil Kartu">
           <span class="deck-glyph">🂠</span><span class="deck-count" id="deck-count">0</span>
         </button>
         <div id="discard-pile" class="deck-card deck-display"></div>
       </div>
+      <div class="table-label">UNO DUEL</div>
     </div>
-
-    <aside class="player-panel">
-      <div class="panel-title">Pemain</div>
-      <ul id="player-list" class="player-list"></ul>
-    </aside>
   </div>
 
   <div class="player-dock" id="player-dock">

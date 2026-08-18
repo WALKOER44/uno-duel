@@ -24,7 +24,7 @@ const MIN_PLAYERS = 2;
 const PEER_PREFIX = '';
 const LOBBY_PEER_ID = 'uno-duel-lobby';
 // Kartu aksi. +16 TIDAK dipakai lagi.
-const ACTION_VALUES = ['skip', 'reverse', 'draw2', 'draw8', 'wild', 'wild4'];
+const ACTION_VALUES = ['skip', 'reverse', 'draw2', 'wild', 'wild4'];
 
 const PEER_CONFIG = {
   host: '0.peerjs.com',
@@ -98,7 +98,7 @@ function createCard(color, value) {
     color,
     value,
     displayColor: color,
-    label: value === 'wild' ? 'WILD' : value === 'wild4' ? '+4' : value === 'draw8' ? '+8' : value
+    label: value === 'wild' ? 'WILD' : value === 'wild4' ? '+4' : value
   };
 }
 
@@ -110,7 +110,7 @@ function createDeck() {
       deck.push(createCard(color, String(value)));
       deck.push(createCard(color, String(value)));
     }
-    ['skip', 'reverse', 'draw2', 'draw8'].forEach((value) => {
+    ['skip', 'reverse', 'draw2'].forEach((value) => {
       deck.push(createCard(color, value));
       deck.push(createCard(color, value));
     });
@@ -156,7 +156,6 @@ function getCardLabel(card) {
   if (card.value === 'skip') return '⏭';
   if (card.value === 'reverse') return '⟲';
   if (card.value === 'draw2') return '+2';
-  if (card.value === 'draw8') return '+8';
   if (card.value === 'wild') return 'W';
   if (card.value === 'wild4') return '+4';
   return String(card.value);
@@ -166,7 +165,6 @@ function getCardSymbol(card) {
   if (card.value === 'reverse') return '🔄';
   if (card.value === 'skip') return '🚫';
   if (card.value === 'draw2') return '➕';
-  if (card.value === 'draw8') return '8';
   if (card.value === 'wild' || card.value === 'wild4') return '🃏';
   return String(card.value);
 }
@@ -303,10 +301,12 @@ const DOM = {
   leaveRoomBtn: document.getElementById('leave-room-btn'),
 
   roomInfoDisplay: document.getElementById('room-info-display'),
-  tableSeats: document.getElementById('player-list'),
+  seats: document.getElementById('seats'),
   discardPile: document.getElementById('discard-pile'),
   drawPile: document.getElementById('draw-pile'),
   deckCount: document.getElementById('deck-count'),
+  turnIndicator: document.getElementById('turn-indicator'),
+  activeColorIndicator: document.getElementById('active-color-indicator'),
 
   playerDock: document.getElementById('player-dock'),
   playerDockHeader: document.getElementById('player-dock-header'),
@@ -799,12 +799,11 @@ function roomPlayCard(playerIdx, cardIdx, color = null) {
       nextIdx = nextTurn(nextIdx);
     }
     addLog('🔄 Reverse!');
-  } else if (card.value === 'draw2' || card.value === 'draw8') {
+  } else if (card.value === 'draw2') {
     nextIdx = nextTurn(nextIdx);
     const target = gameState.players[nextIdx];
-    const amount = { draw2: 2, draw8: 8 }[card.value] || 2;
-    for (let i = 0; i < amount; i += 1) drawCardFor(nextIdx);
-    addLog(`${target.name} ambil +${amount}`);
+    for (let i = 0; i < 2; i += 1) drawCardFor(nextIdx);
+    addLog(`${target.name} ambil +2`);
     playSound('action');
     nextIdx = nextTurn(nextIdx);
   } else if (card.value === 'wild4') {
@@ -2144,45 +2143,79 @@ function renderWaitingRoom(data) {
    RENDERING - GAMEPLAY
    ============================================ */
 
-function renderPlayerPanel() {
-  const container = DOM.tableSeats;
-  container.innerHTML = '';
-  if (!gameState.players.length) return;
-
+// Sudut tempat duduk (derajat): pemain utama selalu di bawah (90°).
+// Khusus 4 pemain -> dikunci jadi kotak/persegi (Bawah, Kiri, Atas, Kanan).
+function seatAngleDeg(idx) {
+  const n = gameState.players.length;
   const meIdx = myIndex();
-
-  gameState.players.forEach((player, idx) => {
-    const li = document.createElement('li');
-    const count = opponentHandCount(player);
-    const isTurn = !gameState.winner && idx === gameState.currentPlayer;
-    const isMe = idx === meIdx;
-
-    li.className = 'player-row';
-    if (isTurn) li.classList.add('turn');
-    if (isMe) li.classList.add('me');
-    if (player.isBot) li.classList.add('bot-row');
-
-    const nameDisplay = player.name || 'Pemain';
-    li.innerHTML = `
-      <span class="row-avatar">${player.avatar || '👤'}</span>
-      <span class="row-name">${escapeHtml(nameDisplay)}${player.isHost ? ' 👑' : ''}${isMe ? ' (Kamu)' : ''}</span>
-      ${player.isBot ? '<span class="row-bot">BOT</span>' : ''}
-      <span class="mini-stack" title="${count} kartu">${miniStackHTML(count)}</span>
-      <span class="row-count">${count}</span>
-      ${player.hasUno && !gameState.winner ? '<span class="row-uno">UNO</span>' : ''}
-    `;
-    container.appendChild(li);
-  });
+  if (n === 4) {
+    const others = [];
+    for (let i = 0; i < n; i += 1) {
+      if (i !== meIdx) others.push(i);
+    }
+    const angles = [180, 270, 0]; // kiri, atas, kanan (bawah = pemain utama)
+    const k = others.indexOf(idx);
+    return angles[k];
+  }
+  const slot = 360 / n;
+  const start = 90 - slot * meIdx;
+  return ((start + slot * idx) % 360 + 360) % 360;
 }
 
-// Miniatur tumpukan kartu (bagian belakang kartu) untuk pemain lain / bot
-function miniStackHTML(count) {
-  const shown = Math.max(1, Math.min(count, 4));
-  let out = '';
-  for (let i = 0; i < shown; i += 1) {
-    out += '<span class="mini-card"></span>';
-  }
-  return out;
+// Tata letak pemain melingkar (radial) mengelilingi meja tengah memakai trigonometri
+function renderSeats() {
+  const container = DOM.seats;
+  container.innerHTML = '';
+  const players = gameState.players;
+  if (!players.length) return;
+
+  const meIdx = myIndex();
+  const n = players.length;
+  const compact = window.innerWidth < 640;
+  const radiusX = compact ? 37 : (n > 6 ? 40 : 44);
+  const radiusY = compact ? 35 : (n > 6 ? 38 : 42);
+
+  players.forEach((player, idx) => {
+    if (idx === meIdx) return;
+
+    const angleDeg = seatAngleDeg(idx);
+    const rad = (angleDeg * Math.PI) / 180;
+    const x = 50 + radiusX * Math.cos(rad);
+    const y = 50 + radiusY * Math.sin(rad);
+    const rot = angleDeg - 90; // arah kartu menghadap ke tengah meja
+    const count = opponentHandCount(player);
+    const isTurn = !gameState.winner && idx === gameState.currentPlayer;
+
+    const seat = document.createElement('div');
+    seat.className = 'seat';
+    if (isTurn) seat.classList.add('turn');
+    seat.style.left = `${x}%`;
+    seat.style.top = `${y}%`;
+
+    const cards = document.createElement('div');
+    cards.className = 'seat-cards';
+    cards.style.transform = `rotate(${rot}deg)`;
+    const shown = Math.max(1, Math.min(count, 6));
+    for (let i = 0; i < shown; i += 1) {
+      const mc = document.createElement('div');
+      mc.className = 'seat-card';
+      cards.appendChild(mc);
+    }
+
+    const label = document.createElement('div');
+    label.className = 'seat-label';
+    const nameDisplay = player.name || 'Pemain';
+    label.innerHTML = `
+      <span class="seat-avatar">${player.avatar || '👤'}</span>
+      <span class="seat-name">${escapeHtml(nameDisplay)}${player.isBot ? ' 🤖' : ''}</span>
+      <span class="seat-count">${count}</span>
+      ${player.hasUno && !gameState.winner ? '<span class="seat-uno">UNO</span>' : ''}
+    `;
+
+    seat.appendChild(cards);
+    seat.appendChild(label);
+    container.appendChild(seat);
+  });
 }
 
 function renderPlayerDock() {
@@ -2249,33 +2282,72 @@ function renderDeckCount() {
 
 function updateStatus() {
   const pill = DOM.statusPill;
-  if (!pill) return;
+  const turnInd = DOM.turnIndicator;
+  const colorInd = DOM.activeColorIndicator;
+  const colorNameOf = {
+    red: 'Merah',
+    yellow: 'Kuning',
+    green: 'Hijau',
+    blue: 'Biru'
+  };
+  const colorHexOf = {
+    red: '#ff4d4d',
+    yellow: '#ffd400',
+    green: '#22c55e',
+    blue: '#2563eb'
+  };
 
   if (gameState.winner) {
-    pill.textContent = `🏆 ${gameState.winner.name} menang!`;
-    pill.classList.add('winner');
+    const msg = `🏆 ${gameState.winner.name} menang!`;
+    if (pill) {
+      pill.textContent = msg;
+      pill.classList.add('winner');
+    }
+    if (turnInd) turnInd.textContent = msg;
+    if (colorInd) {
+      colorInd.textContent = '';
+      colorInd.style.background = '';
+    }
     return;
   }
   if (!gameState.players.length || !gameState.players[gameState.currentPlayer]) {
-    pill.textContent = 'Mempersiapkan...';
-    pill.classList.remove('winner');
+    if (pill) {
+      pill.textContent = 'Mempersiapkan...';
+      pill.classList.remove('winner');
+    }
+    if (turnInd) turnInd.textContent = 'Mempersiapkan...';
+    if (colorInd) {
+      colorInd.textContent = '';
+      colorInd.style.background = '';
+    }
     return;
   }
   const current = gameState.players[gameState.currentPlayer];
   const you = isMyTurn();
   const dirArrow = gameState.direction === 1 ? '↻' : '↺';
-  const colorName = {
-    red: 'Merah',
-    yellow: 'Kuning',
-    green: 'Hijau',
-    blue: 'Biru'
-  }[gameState.currentColor] || '';
-  pill.textContent = `Giliran: ${current.name}${you ? ' (Kamu)' : ''} • ${dirArrow}${colorName ? ' • Warna: ' + colorName : ''}`;
-  pill.classList.remove('winner');
+  const colorName = colorNameOf[gameState.currentColor] || '';
+
+  if (pill) {
+    pill.textContent = `Giliran: ${current.name}${you ? ' (Kamu)' : ''} • ${dirArrow}${colorName ? ' • Warna: ' + colorName : ''}`;
+    pill.classList.remove('winner');
+  }
+  if (turnInd) {
+    turnInd.textContent = `Giliran: ${current.name}${you ? ' (Kamu)' : ''} ${dirArrow}`;
+  }
+  if (colorInd) {
+    const hex = colorHexOf[gameState.currentColor];
+    if (hex) {
+      colorInd.textContent = colorName;
+      colorInd.style.background = hex;
+    } else {
+      colorInd.textContent = '';
+      colorInd.style.background = '';
+    }
+  }
 }
 
 function renderGameplay() {
-  renderPlayerPanel();
+  renderSeats();
   renderPlayerDock();
   renderDiscard();
   renderDeckCount();

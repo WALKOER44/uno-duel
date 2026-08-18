@@ -441,17 +441,72 @@ select { font-family: inherit; color: inherit; }
 
 .arena {
   flex: 1; min-height: 0;
-  display: grid;
-  grid-template-columns: 1fr 190px;
-  gap: 10px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.table { position: relative; min-height: 0; }
 
-.table-center {
-  position: absolute;
-  top: 40%; left: 50%;
-  transform: translate(-50%, -50%);
-  display: flex; gap: 16px; align-items: center;
+/* Meja hijau utama di tengah */
+.table {
+  width: min(400px, 58vw);
+  height: min(260px, 38vh);
+  border-radius: 44% 44% 50% 50% / 36% 36% 42% 42%;
+  background:
+    radial-gradient(circle at 50% 28%, #3bbd63, #238a44 55%, #176b33 100%);
+  border: 5px solid var(--black);
+  box-shadow:
+    0 0 0 4px var(--white),
+    9px 9px 0 0 var(--black),
+    inset 0 0 34px rgba(0, 0, 0, .28);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  position: relative;
+  z-index: 3;
+}
+
+.table-info {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.turn-indicator {
+  font-size: 12px; font-weight: 900;
+  background: var(--white);
+  border: 2.5px solid var(--black);
+  border-radius: 999px;
+  padding: 4px 12px;
+  box-shadow: 2px 2px 0 0 var(--black);
+  white-space: nowrap;
+}
+.active-color-indicator {
+  font-size: 11px; font-weight: 900; color: var(--black);
+  border: 2.5px solid var(--black);
+  border-radius: 999px;
+  padding: 3px 10px;
+  min-width: 14px; min-height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--white);
+  transition: background .2s ease;
+}
+.pile-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.table-label {
+  font-size: 11px; font-weight: 900; letter-spacing: 3px;
+  color: rgba(255, 255, 255, .9);
+  background: rgba(0, 0, 0, .25);
+  padding: 2px 10px;
+  border-radius: 999px;
 }
 
 .deck-card {
@@ -497,75 +552,73 @@ select { font-family: inherit; color: inherit; }
 .discard-slot.l4 { transform: translate(6px, 4px) rotate(2deg); }
 
 /* ============================================================
-   PANEL PEMAIN
+   SEATS — TATA LETAK PEMAIN DINAMIS (RADIAL / KOTAK 4 PEMAIN)
    ============================================================ */
-.player-panel {
-  background: var(--white);
-  border: var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: 12px;
-  min-height: 0;
-  display: flex; flex-direction: column;
+.seats {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
 }
-.panel-title {
-  font-weight: 900; text-align: center; letter-spacing: 1px;
-  padding-bottom: 8px; border-bottom: 2.5px solid var(--black);
-  margin-bottom: 10px; font-size: 13px;
-}
-.player-list {
-  list-style: none;
-  display: flex; flex-direction: column; gap: 6px;
-  overflow-y: auto; min-height: 0;
-}
-.player-row {
-  display: flex; align-items: center; gap: 6px;
-  padding: 8px;
-  border: 2px solid var(--black);
-  border-radius: var(--radius);
-  background: var(--grey);
-  font-size: 12.5px; font-weight: 700;
-}
-.player-row.turn {
-  background: var(--yellow);
-  box-shadow: 3px 3px 0 0 var(--black);
-}
-.player-row.me { border-style: dashed; }
-.player-row.bot-row { border-style: dashed; background: var(--white); }
-.player-row.bot-row .row-name { color: #555; }
-.mini-stack {
-  display: inline-flex;
+
+.seat {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  margin-left: 2px;
+  gap: 4px;
+  pointer-events: none;
 }
-.mini-card {
-  width: 13px;
-  height: 20px;
-  border: 1.5px solid var(--black);
-  border-radius: 3px;
+
+/* Fan kartu lawan menghadap ke tengah meja (rotasi via JS) */
+.seat-cards {
+  display: flex;
+  align-items: center;
+  transition: filter .15s ease;
+}
+.seat-card {
+  width: 18px;
+  height: 27px;
+  border: 2px solid var(--black);
+  border-radius: 4px;
   background:
-    repeating-linear-gradient(45deg, var(--black) 0 2px, var(--yellow) 2px 4px);
-  margin-left: -7px;
+    repeating-linear-gradient(45deg, var(--black) 0 3px, var(--yellow) 3px 6px);
+  margin-left: -9px;
   flex-shrink: 0;
-  box-shadow: 1px 1px 0 0 rgba(0, 0, 0, 0.35);
+  box-shadow: 1px 1px 0 0 rgba(0, 0, 0, .35);
 }
-.mini-card:first-child { margin-left: 0; }
-.row-avatar { font-size: 18px; }
-.row-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.row-count {
-  font-weight: 900; font-size: 14px; min-width: 24px; text-align: center;
-  background: var(--white); border: 2px solid var(--black); border-radius: 6px; padding: 0 5px;
+.seat-card:first-child { margin-left: 0; }
+
+.seat-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--white);
+  border: 2.5px solid var(--black);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 900;
+  box-shadow: 2px 2px 0 0 var(--black);
+  white-space: nowrap;
+  max-width: 140px;
 }
-.row-uno {
-  font-size: 9px; font-weight: 900;
-  background: #ef4444; color: #fff;
-  border: 1.5px solid var(--black); border-radius: 4px; padding: 1px 5px;
-}
-.row-bot {
-  font-size: 9px; font-weight: 900;
+.seat-label .seat-avatar { font-size: 15px; }
+.seat-label .seat-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.seat-label .seat-count {
   background: var(--black); color: var(--yellow);
-  border-radius: 4px; padding: 1px 5px;
+  border-radius: 999px; padding: 0 6px; font-size: 10px;
+  flex-shrink: 0;
 }
+.seat-label .seat-uno {
+  font-size: 8px; font-weight: 900;
+  background: #ef4444; color: #fff;
+  border: 1.5px solid var(--black); border-radius: 4px; padding: 0 4px;
+}
+
+.seat.turn .seat-cards { filter: drop-shadow(0 0 7px rgba(255, 212, 0, .95)); }
+.seat.turn .seat-label { background: var(--yellow); }
 
 /* ============================================================
    DOCK PEMAIN
@@ -825,13 +878,16 @@ select { font-family: inherit; color: inherit; }
 }
 
 @media (max-width: 640px) {
-  .arena {
-    grid-template-columns: 1fr;
-    grid-template-rows: 1fr auto;
+  .table {
+    width: min(300px, 72vw);
+    height: min(190px, 32vh);
+    border-radius: 40% 40% 46% 46% / 34% 34% 40% 40%;
+    gap: 7px;
   }
-  .player-panel { max-height: 120px; }
-  .player-list { flex-direction: row; overflow-x: auto; overflow-y: hidden; }
-  .player-row { min-width: 120px; flex-shrink: 0; }
-  .table-center { top: 42%; }
+  .turn-indicator { font-size: 10px; padding: 3px 9px; }
+  .active-color-indicator { font-size: 10px; padding: 2px 8px; }
+  .table-label { display: none; }
+  .seat-label { max-width: 108px; font-size: 10px; padding: 2px 6px; }
+  .seat-card { width: 14px; height: 21px; margin-left: -7px; }
   .chat-panel { width: calc(100vw - 16px); right: 8px; bottom: 8px; }
 }
