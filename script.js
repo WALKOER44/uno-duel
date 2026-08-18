@@ -306,6 +306,7 @@ const DOM = {
   createRoomBtn: document.getElementById('create-room-btn'),
   createPrivateBtn: document.getElementById('create-private-btn'),
   soloBtn: document.getElementById('solo-btn'),
+  soloBots: document.getElementById('solo-bots'),
   joinPrivateBtn: document.getElementById('join-private-btn'),
   roomCodeInput: document.getElementById('room-code-input'),
   roomCapacity: document.getElementById('room-capacity'),
@@ -860,35 +861,45 @@ function afterRoomChange() {
 
 function botTurn() {
   if (gameState.winner || gameState.isOnline) return;
-  const botIdx = gameState.players.findIndex((p) => p.isBot);
-  if (botIdx === -1 || gameState.currentPlayer !== botIdx) return;
+  const botIdx = gameState.currentPlayer;
+  const bot = gameState.players[botIdx];
+  if (!bot || !bot.isBot) return;
 
   setTimeout(() => {
     if (gameState.winner || gameState.currentPlayer !== botIdx) return;
-    const bot = gameState.players[botIdx];
-    if (!bot || !bot.isBot) return;
+    const current = gameState.players[botIdx];
+    if (!current || !current.isBot) return;
 
-    const playable = bot.hand.filter((c) => isValidMove(c, topCard()));
+    const playable = current.hand.filter((c) => isValidMove(c, topCard()));
 
     if (!playable.length) {
       const drawn = drawCardFor(botIdx);
       if (drawn && isValidMove(drawn, topCard())) {
-        const idx = bot.hand.indexOf(drawn);
+        const idx = current.hand.indexOf(drawn);
         const color = drawn.color === 'wild' ? COLORS[Math.floor(Math.random() * 4)] : null;
         if (roomPlayCard(botIdx, idx, color)) afterRoomChange();
         return;
       }
-      addLog('🤖 Bot pass');
+      addLog(`🤖 ${current.name} pass`);
       gameState.currentPlayer = nextTurn(botIdx);
-      renderGameplay();
+      scheduleNextBotTurn();
       return;
     }
 
     const choice = playable[Math.floor(Math.random() * playable.length)];
-    const idx = bot.hand.indexOf(choice);
+    const idx = current.hand.indexOf(choice);
     const color = choice.color === 'wild' ? COLORS[Math.floor(Math.random() * 4)] : null;
     if (roomPlayCard(botIdx, idx, color)) afterRoomChange();
   }, 700);
+}
+
+// Setelah giliran berganti, lanjutkan otomatis ke bot berikutnya (mendukung banyak bot).
+function scheduleNextBotTurn() {
+  renderGameplay();
+  const nextPlayer = gameState.players[gameState.currentPlayer];
+  if (nextPlayer && nextPlayer.isBot && gameState.currentPlayer !== myIndex()) {
+    setTimeout(botTurn, 700);
+  }
 }
 
 // Giliran otomatis untuk Bot pengisi slot di room online (dijalankan di Host)
@@ -2089,7 +2100,7 @@ function leaveGame() {
    SOLO MODE (LATIHAN SOLO vs Bot)
    ============================================ */
 
-function resetLocalGame() {
+function resetLocalGame(botCount = 1) {
   if (gameState.peer) {
     try {
       gameState.peer.destroy();
@@ -2103,8 +2114,8 @@ function resetLocalGame() {
   gameState.gameMode = 'solo';
   gameState.isOnline = false;
 
-  // 2 pemain (Kamu + Bot) -> stok kartu 36 buah
-  const freshDeck = createDeckFor(2);
+  const totalPlayers = 1 + Math.max(0, Math.min(parseInt(botCount, 10) || 1, MAX_PLAYERS - 1));
+  const freshDeck = createDeckFor(totalPlayers);
   gameState.deck = freshDeck;
   gameState.discard = [];
   gameState.deckCount = freshDeck.length;
@@ -2119,22 +2130,25 @@ function resetLocalGame() {
       isBot: false,
       hand: [],
       hasUno: false
-    },
-    {
-      id: 'player2',
-      name: 'Bot',
+    }
+  ];
+  for (let b = 1; b < totalPlayers; b += 1) {
+    gameState.players.push({
+      id: 'bot' + b,
+      name: 'Bot ' + b,
       avatar: '🤖',
       isMe: false,
       isHost: false,
       isBot: true,
       hand: [],
       hasUno: false
-    }
-  ];
+    });
+  }
 
   for (let i = 0; i < 7; i += 1) {
-    gameState.players[0].hand.push(freshDeck.pop());
-    gameState.players[1].hand.push(freshDeck.pop());
+    for (const p of gameState.players) {
+      p.hand.push(freshDeck.pop());
+    }
   }
 
   let first = freshDeck.pop();
@@ -2599,11 +2613,12 @@ DOM.createPrivateBtn.addEventListener('click', () => {
   createRoom(false);
 });
 
-// LATIHAN SOLO - langsung main vs bot
+// LATIHAN SOLO - langsung main vs bot (jumlah bot bisa dipilih)
 DOM.soloBtn.addEventListener('click', () => {
   gameState.gameMode = 'solo';
   DOM.roomInfoDisplay.textContent = 'Mode: Latihan Solo';
-  resetLocalGame();
+  const botCount = parseInt(DOM.soloBots.value, 10) || 1;
+  resetLocalGame(botCount);
   showScreen('gameplay');
 });
 
@@ -2803,7 +2818,7 @@ DOM.winnerAgainBtn.addEventListener('click', () => {
       showToast('Meminta ronde baru ke Host...');
     }
   } else {
-    resetLocalGame();
+    resetLocalGame(parseInt(DOM.soloBots.value, 10) || 1);
   }
 });
 
@@ -2880,6 +2895,15 @@ function init() {
   DOM.roomCapacity.addEventListener('change', () => {
     gameState.roomCapacity = parseInt(DOM.roomCapacity.value, 10) || 4;
   });
+
+  // Dropdown jumlah Bot untuk mode solo (1-7 bot)
+  for (let n = 1; n <= MAX_PLAYERS - 1; n += 1) {
+    const opt = document.createElement('option');
+    opt.value = String(n);
+    opt.textContent = n === 1 ? '1 Bot' : `${n} Bot`;
+    if (n === 1) opt.selected = true;
+    DOM.soloBots.appendChild(opt);
+  }
 
   gameState.playerProfile.avatar = DOM.avatarBtns[0].dataset.avatar;
   DOM.avatarBtns[0].classList.add('active');

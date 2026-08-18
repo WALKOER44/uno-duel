@@ -92,6 +92,15 @@ select { font-family: inherit; color: inherit; }
   letter-spacing: 1.5px;
 }
 
+.solo-bot-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+.solo-bot-row .select-input { flex: 0 0 96px; text-align: center; }
+
 .icon-btn {
   width: 42px; height: 42px;
   font-size: 17px;
