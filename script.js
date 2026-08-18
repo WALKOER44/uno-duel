@@ -713,25 +713,16 @@ function replenishDeck() {
     const top = gameState.discard.pop();
     gameState.deck = shuffleDeck(gameState.discard);
     gameState.discard = [top];
-    return;
-  }
-  if (gameState.discard.length === 1) {
-    gameState.deck = shuffleDeck(gameState.discard);
-    gameState.discard = [];
+    addLog('🔄 Tumpukan buangan diacak kembali menjadi kartu draw!');
     return;
   }
 
-  // Semua kartu ada di tangan pemain -> kumpulkan lalu acak jadi deck baru
-  const gathered = [];
-  for (const p of gameState.players) {
-    if (p.hand && p.hand.length) {
-      gathered.push(...p.hand);
-      p.hand = [];
-    }
-  }
-  if (gathered.length) {
-    gameState.deck = shuffleDeck(gathered);
-  }
+  // Jika tidak ada tumpukan buangan yang cukup untuk diacak (kurang dari 2 kartu),
+  // buat deck baru dari awal (refresh seperti awal angkanya) agar permainan tidak macet
+  // dan jangan mengosongkan tangan pemain!
+  const freshDeck = createDeckFor(gameState.players.length || 2);
+  gameState.deck = freshDeck;
+  addLog('🔄 Tumpukan kartu habis! Mengisi ulang dengan kartu baru.');
 }
 
 // Darurat: benar-benar tidak ada kartu tersisa -> pemenang pemain kartu tersedikit
