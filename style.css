@@ -1312,14 +1312,15 @@ input[type='text'] {
   top: 45%;
   transform: translateY(-50%);
   width: min(90vw, 300px);
-  max-height: 58vh;
+  max-height: 60vh;
   background: rgba(38, 37, 35, 0.92);
   backdrop-filter: blur(8px);
   border: 1px solid var(--color-border);
   border-radius: 14px;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   z-index: 150;
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
   animation: chatIn 0.35s cubic-bezier(0.22, 1, 0.36, 1);
@@ -1337,6 +1338,9 @@ input[type='text'] {
 }
 
 .chat-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1344,6 +1348,8 @@ input[type='text'] {
   border-bottom: 1px solid var(--color-border);
   font-weight: 700;
   font-size: 0.9rem;
+  background: rgba(38, 37, 35, 0.96);
+  backdrop-filter: blur(8px);
 }
 
 .chat-toggle-btn {
@@ -1478,7 +1484,11 @@ input[type='text'] {
 .chat-emote-row {
   flex: 0 0 auto;
   min-height: 0;
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
   padding: 0 10px 10px;
+  background: rgba(38, 37, 35, 0.96);
 }
 
 .emote-toggle-btn {

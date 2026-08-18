@@ -13,6 +13,7 @@ const COLORS = ['red', 'yellow', 'green', 'blue'];
 const MAX_PLAYERS = 6;
 const MIN_PLAYERS = 2;
 const PEER_PREFIX = 'uno-duel-';
+const ACTION_VALUES = ['skip', 'reverse', 'draw2', 'draw8', 'draw16', 'wild', 'wild4'];
 
 const EMOTES = [
   { e: '😄', s: 'cheer' },
@@ -55,7 +56,7 @@ function createCard(color, value) {
     color,
     value,
     displayColor: color,
-    label: value === 'wild' ? 'WILD' : value === 'wild4' ? '+4' : value
+    label: value === 'wild' ? 'WILD' : value === 'wild4' ? '+4' : value === 'draw8' ? '+8' : value === 'draw16' ? '+16' : value
   };
 }
 
@@ -67,7 +68,7 @@ function createDeck() {
       deck.push(createCard(color, String(value)));
       deck.push(createCard(color, String(value)));
     }
-    ['skip', 'reverse', 'draw2'].forEach((value) => {
+    ['skip', 'reverse', 'draw2', 'draw8', 'draw16'].forEach((value) => {
       deck.push(createCard(color, value));
       deck.push(createCard(color, value));
     });
@@ -95,6 +96,7 @@ function isValidMove(card, topCard) {
     return true;
   }
   if (card.color === topCard.color) return true;
+  // Rule: cards also match by equal number/value even if the color differs
   if (card.value === topCard.value) return true;
   return false;
 }
@@ -103,6 +105,8 @@ function getCardLabel(card) {
   if (card.value === 'skip') return '⏭';
   if (card.value === 'reverse') return '⟲';
   if (card.value === 'draw2') return '+2';
+  if (card.value === 'draw8') return '+8';
+  if (card.value === 'draw16') return '+16';
   if (card.value === 'wild') return 'W';
   if (card.value === 'wild4') return '+4';
   return String(card.value);
@@ -112,6 +116,8 @@ function getCardSymbol(card) {
   if (card.value === 'reverse') return '🔄';
   if (card.value === 'skip') return '🚫';
   if (card.value === 'draw2') return '➕';
+  if (card.value === 'draw8') return '8';
+  if (card.value === 'draw16') return '16';
   if (card.value === 'wild' || card.value === 'wild4') return '🃏';
   return String(card.value);
 }
@@ -169,6 +175,7 @@ const gameState = {
   direction: 1,
   winner: null,
   pendingWild: null,
+  passPending: false,
   log: [],
   gameStarted: false
 };
@@ -600,11 +607,12 @@ function roomPlayCard(playerIdx, cardIdx, color = null) {
       nextIdx = nextTurn(nextIdx);
     }
     addLog('🔄 Reverse!');
-  } else if (card.value === 'draw2') {
+  } else if (card.value === 'draw2' || card.value === 'draw8' || card.value === 'draw16') {
     nextIdx = nextTurn(nextIdx);
     const target = gameState.players[nextIdx];
-    for (let i = 0; i < 2; i += 1) drawCardFor(nextIdx);
-    addLog(`${target.name} ambil +2`);
+    const amount = { draw2: 2, draw8: 8, draw16: 16 }[card.value] || 2;
+    for (let i = 0; i < amount; i += 1) drawCardFor(nextIdx);
+    addLog(`${target.name} ambil +${amount}`);
     playSound('action');
     nextIdx = nextTurn(nextIdx);
   } else if (card.value === 'wild4') {
@@ -986,7 +994,7 @@ function startOnlineGame() {
   }
 
   let first = gameState.deck.pop();
-  while (first && (first.color === 'wild' || first.value === 'wild4')) {
+  while (first && ACTION_VALUES.includes(first.value)) {
     gameState.deck.unshift(first);
     first = gameState.deck.pop();
   }
@@ -1114,6 +1122,7 @@ function resetOnlineState() {
   gameState.gameStarted = false;
   gameState.winner = null;
   gameState.pendingWild = null;
+  gameState.passPending = false;
   gameState.players = [];
   gameState.deck = [];
   gameState.discard = [];
@@ -1191,7 +1200,7 @@ function resetLocalGame() {
   }
 
   let first = freshDeck.pop();
-  while (first && (first.color === 'wild' || first.value === 'wild4')) {
+  while (first && ACTION_VALUES.includes(first.value)) {
     freshDeck.unshift(first);
     first = freshDeck.pop();
   }
@@ -1241,6 +1250,55 @@ function drawLocal() {
     if (nextPlayer && nextPlayer.isBot) {
       setTimeout(botTurn, 800);
     }
+  }
+}
+
+function passLocal() {
+  if (gameState.winner || !isMyTurn()) return;
+
+  // A playable card was drawn from Pass but declined -> end the turn now
+  if (gameState.passPending) {
+    gameState.passPending = false;
+    addLog('⏭ Pass giliran');
+    gameState.currentPlayer = nextTurn(0);
+    renderGameplay();
+    const nextPlayer = gameState.players[gameState.currentPlayer];
+    if (nextPlayer && nextPlayer.isBot) {
+      setTimeout(botTurn, 700);
+    }
+    return;
+  }
+
+  const me = gameState.players[0];
+  const drawn = drawCardFor(0);
+
+  if (!drawn) {
+    addLog('❌ Deck habis!');
+    renderGameplay();
+    return;
+  }
+
+  addLog('🎴 Ambil 1 kartu (Pass)');
+  playSound('draw');
+
+  if (isValidMove(drawn, topCard())) {
+    gameState.passPending = true;
+    addLog('✅ Bisa dimainkan! Klik kartunya atau Pass lagi untuk lewati.');
+    showToast('Kartu baru bisa dimainkan!');
+    if (drawn.color === 'wild' || drawn.value === 'wild4') {
+      gameState.pendingWild = me.hand.length - 1;
+      DOM.colorPicker.classList.remove('hidden');
+    }
+    renderGameplay();
+    return;
+  }
+
+  addLog('⏭ Pass giliran');
+  gameState.currentPlayer = nextTurn(0);
+  renderGameplay();
+  const nextPlayer = gameState.players[gameState.currentPlayer];
+  if (nextPlayer && nextPlayer.isBot) {
+    setTimeout(botTurn, 700);
   }
 }
 
@@ -1441,6 +1499,7 @@ function playMyCard(idx) {
 }
 
 function drawAction() {
+  gameState.passPending = false;
   if (gameState.isOnline) {
     gameState.conn.send({ type: 'drawCard' });
   } else {
@@ -1625,6 +1684,7 @@ DOM.myHand.addEventListener('click', (e) => {
     return;
   }
 
+  gameState.passPending = false;
   playMyCard(idx);
 });
 
@@ -1637,13 +1697,7 @@ DOM.drawPile.addEventListener('click', () => {
 // Pass
 DOM.passBtn.addEventListener('click', () => {
   if (gameState.isOnline || gameState.winner || !isMyTurn()) return;
-  addLog('⏭ Pass');
-  gameState.currentPlayer = nextTurn(0);
-  renderGameplay();
-  const nextPlayer = gameState.players[gameState.currentPlayer];
-  if (nextPlayer && nextPlayer.isBot) {
-    setTimeout(botTurn, 700);
-  }
+  passLocal();
 });
 
 // UNO!
@@ -1670,6 +1724,7 @@ DOM.colorButtons.forEach((btn) => {
     const color = btn.dataset.color;
     const idx = gameState.pendingWild;
     gameState.pendingWild = null;
+    gameState.passPending = false;
     DOM.colorPicker.classList.add('hidden');
 
     if (gameState.isOnline) {
