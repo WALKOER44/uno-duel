@@ -131,40 +131,12 @@ select { font-family: inherit; color: inherit; }
   gap: 14px;
 }
 
-.game-title {
-  text-align: center;
-  font-size: clamp(40px, 8vw, 62px);
-  font-weight: 900;
-  letter-spacing: 3px;
-  color: var(--black);
-  line-height: 1;
-  -webkit-text-stroke: 1.5px var(--black);
-  text-shadow: 5px 5px 0 var(--yellow);
-}
-.game-title em {
-  font-style: normal;
-  color: var(--yellow);
-  -webkit-text-stroke: 1.5px var(--black);
-  text-shadow: none;
-  background: var(--black);
-  color: var(--yellow);
-  padding: 0 8px;
-  margin-left: 4px;
-}
-
-.subtitle {
-  text-align: center;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 2px;
-  color: var(--black);
-  background: var(--yellow);
-  border: 2.5px solid var(--black);
-  border-radius: 999px;
-  padding: 5px 14px;
+/* Banner logo SVG UNO DUEL di lobby */
+.logo-banner {
+  display: block;
+  width: min(560px, 92vw);
   margin: 0 auto;
-  display: inline-block;
-  width: fit-content;
+  filter: drop-shadow(6px 6px 0 rgba(0, 0, 0, .18));
 }
 
 .avatar-row { display: flex; gap: 8px; }
