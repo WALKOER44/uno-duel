@@ -1,7 +1,7 @@
 {
-  "name": "uno-duel-relay",
+  "name": "uno-duel",
   "version": "1.0.0",
-  "description": "PeerJS signaling + Socket.io room registry untuk UNO Duel (GitHub Pages frontend)",
+  "description": "UNO Duel - frontend + relay server (PeerJS signaling & Socket.io room registry)",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

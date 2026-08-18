@@ -46,12 +46,15 @@ const PEER_CONFIG = {
 //   RELAY.enabled = true   dan   RELAY.host = '<url relay anda>'
 // Jika enabled=false, game memakai broker PeerJS publik (0.peerjs.com).
 const RELAY = {
-  enabled: false,
-  host: 'YOUR-APP.onrender.com',
+  enabled: true,
+  host: 'uno-duel-production.up.railway.app',
   port: 443,
   path: '/peerjs',
   secure: true
 };
+
+// URL Socket.io production Railway
+const SOCKET_URL = (RELAY.secure ? 'https://' : 'http://') + RELAY.host;
 
 function peerConfig() {
   const b = RELAY.enabled ? RELAY : { host: '0.peerjs.com', port: 443, path: '/', secure: true };
@@ -1330,7 +1333,7 @@ function makeLobbyRoomInfo() {
 function socketConnect() {
   if (!window.io || !RELAY.enabled || gameState.socket) return;
   try {
-    const s = io((RELAY.secure ? 'https://' : 'http://') + RELAY.host, {
+    const s = io(SOCKET_URL, {
       transports: ['websocket', 'polling']
     });
     gameState.socket = s;

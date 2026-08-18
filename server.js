@@ -1,16 +1,11 @@
-// UNO Duel - Relay server
-// Hosting: GitHub Pages hanya bisa file statis. Server ini menangani:
-//   1. PeerJS signaling (custom PeerServer) -> koneksi player stabil, status Online
-//   2. Socket.io room registry       -> daftar room publik bisa diandalkan
+// UNO Duel — server relay + frontend (1 folder full)
+// Berjalan di root repo. Menyajikan:
+//   1. Frontend statis (index.html, style.css, script.js)
+//   2. PeerJS signaling  -> koneksi P2P stabil, status Online
+//   3. Socket.io registry -> daftar room publik bisa diandalkan
 //
-// DEPLOY (gratis):
-//   - Render : https://dashboard.render.com -> "New" -> "Web Service"
-//       Build: npm install   Start: node server.js   (Render otomatis isi PORT)
-//       Setelah deploy, salin URL mis. https://uno-duel-relay.onrender.com
-//   - Railway : https://railway.app -> New Project -> Deploy from repo
-//   - Glitch  : https://glitch.com -> import this folder
-// Lalu di script.js frontend ubah:
-//   const RELAY = { enabled: true, host: 'YOUR-APP.onrender.com', port: 443, path: '/peerjs', secure: true };
+// DEPLOY: Railway -> New Project -> Deploy from GitHub -> repo ini.
+// package.json di root membuat Railway otomatis mendeteksi Node app.
 
 const express = require('express');
 const http = require('http');
@@ -70,11 +65,11 @@ io.on('connection', (socket) => {
 app.get('/status', (_req, res) => {
   res.json({ ok: true, rooms: rooms.size, ts: Date.now() });
 });
-app.get('/', (_req, res) => {
-  res.send('UNO Duel relay online. Rooms aktif: ' + rooms.size);
-});
+
+// ---- 3. Frontend statis (folder repo ini) ----
+app.use(express.static(__dirname));
 
 const PORT = process.env.PORT || 9000;
 server.listen(PORT, () => {
-  console.log('UNO Duel relay berjalan di :' + PORT);
+  console.log('UNO Duel relay + frontend berjalan di :' + PORT);
 });
