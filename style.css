@@ -232,6 +232,13 @@ select { font-family: inherit; color: inherit; }
   background: var(--yellow);
   border-color: var(--black);
 }
+.lb-hint {
+  display: block;
+  font-size: 10.5px;
+  color: #666;
+  font-weight: 600;
+  margin-top: 3px;
+}
 
 .join-row { display: flex; gap: 8px; }
 .join-row .text-input { flex: 1; }

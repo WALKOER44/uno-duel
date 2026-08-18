@@ -207,7 +207,9 @@ const gameState = {
     token: '',
     username: '',
     avatar: '👦',
-    serverOk: false
+    serverOk: false,
+    dbOk: false,
+    failStreak: 0
   },
   me: null,
 
@@ -705,10 +707,46 @@ function nextTurn(idx) {
 
 function replenishDeck() {
   if (gameState.deck.length > 0) return;
-  if (gameState.discard.length <= 1) return;
-  const top = gameState.discard.pop();
-  gameState.deck = shuffleDeck(gameState.discard);
-  gameState.discard = [top];
+
+  // Refill otomatis: tumpukan buangan (kartu di tengah) diacak lagi jadi kartu draw
+  if (gameState.discard.length >= 2) {
+    const top = gameState.discard.pop();
+    gameState.deck = shuffleDeck(gameState.discard);
+    gameState.discard = [top];
+    return;
+  }
+  if (gameState.discard.length === 1) {
+    gameState.deck = shuffleDeck(gameState.discard);
+    gameState.discard = [];
+    return;
+  }
+
+  // Semua kartu ada di tangan pemain -> kumpulkan lalu acak jadi deck baru
+  const gathered = [];
+  for (const p of gameState.players) {
+    if (p.hand && p.hand.length) {
+      gathered.push(...p.hand);
+      p.hand = [];
+    }
+  }
+  if (gathered.length) {
+    gameState.deck = shuffleDeck(gathered);
+  }
+}
+
+// Darurat: benar-benar tidak ada kartu tersisa -> pemenang pemain kartu tersedikit
+function endRoundFewestCards(reason) {
+  let best = gameState.players[0] || { name: 'Pemain', hand: [], isBot: false };
+  for (const p of gameState.players) {
+    if ((p.hand || []).length < (best.hand || []).length) best = p;
+  }
+  addLog(reason || '😵 Semua kartu habis');
+  gameState.winner = best;
+  addLog(`🏆 ${best.name} MENANG (kartu tersedikit)!`);
+  showToast(`${best.name} Menang!`);
+  playSound('win');
+  if (!best.isBot) recordWin(best.name);
+  return best;
 }
 
 function drawCardFor(playerIdx) {
@@ -1195,7 +1233,7 @@ function handleGameAction(idx, conn, msg, isLocal) {
     if (idx !== gameState.currentPlayer) return;
     const drawn = drawCardFor(idx);
     if (!drawn) {
-      addLog('❌ Deck habis!');
+      endRoundFewestCards('❌ Deck habis');
       broadcastState();
       return;
     }
@@ -1635,14 +1673,31 @@ async function restoreAuth() {
 }
 
 async function checkServerHealth() {
-  try {
-    const res = await fetch('/api/health', { headers: { Accept: 'application/json' } });
-    const data = await res.json();
-    gameState.auth.serverOk = !!(data && data.ok);
-  } catch (e) {
-    gameState.auth.serverOk = false;
+  let ok = false;
+  let db = false;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const res = await fetch('/api/health', { headers: { Accept: 'application/json' } });
+      const data = await res.json();
+      ok = !!(data && data.ok);
+      db = !!(data && data.db);
+      break;
+    } catch (e) {
+      // cold-start / gagal sesaat -> coba sekali lagi
+      if (attempt === 0) await new Promise((r) => setTimeout(r, 1200));
+    }
   }
+
+  if (ok) {
+    gameState.auth.failStreak = 0;
+  } else {
+    gameState.auth.failStreak = (gameState.auth.failStreak || 0) + 1;
+  }
+  // Offline hanya setelah 2 kegagalan beruntun, biar tidak berkedip-kedip
+  gameState.auth.serverOk = ok || gameState.auth.failStreak < 2;
+  gameState.auth.dbOk = db;
   updateServerStatus();
+  renderLeaderboard();
 }
 
 // Status indikator murni dari kesehatan server (Vercel/Neon),
@@ -1698,6 +1753,10 @@ async function recordWin(name) {
 
 function renderLeaderboard() {
   const list = DOM.leaderboardList;
+  if (gameState.auth.serverOk && gameState.auth.dbOk === false) {
+    list.innerHTML = '<li class="list-empty">⚠️ Database belum terhubung.<br/><span class="lb-hint">Atur DATABASE_URL di Vercel env lalu redeploy.</span></li>';
+    return;
+  }
   if (!gameState.leaderboard || !gameState.leaderboard.length) {
     list.innerHTML = '<li class="list-empty">Belum ada skor. Menangkan game untuk masuk papan.</li>';
     return;
@@ -1975,7 +2034,7 @@ function drawLocal() {
   const drawn = drawCardFor(0);
 
   if (!drawn) {
-    addLog('❌ Deck habis!');
+    endRoundFewestCards('❌ Deck habis');
     renderGameplay();
     return;
   }
@@ -2023,7 +2082,7 @@ function passLocal() {
   const drawn = drawCardFor(0);
 
   if (!drawn) {
-    addLog('❌ Deck habis!');
+    endRoundFewestCards('❌ Deck habis');
     renderGameplay();
     return;
   }
