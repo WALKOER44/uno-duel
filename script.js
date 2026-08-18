@@ -33,19 +33,42 @@ const PEER_BROKERS = [
   { host: '2.peerjs.com', port: 443 }
 ];
 
-// ICE: STUN Google + TURN publik (openrelay) supaya koneksi tembus NAT ketat.
+// ICE: STUN publik (Google/Cloudflare) + TURN PeerJS Cloud (resmi, kredensial
+// bawaan library, cocok dengan broker peerjs.com) + openrelay cadangan.
+// Ini yang membuat koneksi tembus NAT/CGNAT antar jaringan berbeda (WiFi beda,
+// data seluler), bukan cuma koneksi di LAN yang sama.
 const ICE_SERVERS = [
-  { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+  { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] },
+  {
+    urls: ['turn:us-0.turn.peerjs.com:3478', 'turn:eu-0.turn.peerjs.com:3478'],
+    username: 'peerjs',
+    credential: 'peerjsp'
+  },
+  {
+    urls: ['turn:us-0.turn.peerjs.com:3478?transport=tcp', 'turn:eu-0.turn.peerjs.com:3478?transport=tcp'],
+    username: 'peerjs',
+    credential: 'peerjsp'
+  },
   { urls: 'stun:openrelay.metered.ca:80' },
-  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
   { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
 ];
 
 // ===== Koneksi P2P (PeerJS) =====
 // Multiplayer memakai WebRTC Peer-to-Peer via broker PeerJS publik (berbasis 0.peerjs.com
 // dengan fallback 1/2.peerjs.com). Backend Vercel (/api/score) untuk Papan Peringkat.
-let _brokerIdx = 0;
+let _brokerIdx = 0;         // broker untuk koneksi ROOM (host & client)
+let _lobbyBrokerIdx = 0;    // broker untuk LOBBY room publik (dipin 0 agar seragam semua pemakai)
 let _brokerDownCount = 0;
+
+// Broker diturunkan dari kode room supaya host & client SELALU mulai di broker
+// yang sama. Kalau client pindah broker sendiri, host (yang terdaftar di SATU
+// broker) tidak akan pernah ditemukan — penyebab "beda internet gak bisa join".
+function brokerForCode(code) {
+  const s = String(code || '');
+  let h = 0;
+  for (let i = 0; i < s.length; i += 1) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h % PEER_BROKERS.length;
+}
 
 function peerConfig(brokerIdx) {
   const b = PEER_BROKERS[brokerIdx] || PEER_BROKERS[0];
@@ -63,6 +86,10 @@ function nextBroker() {
   _brokerIdx = (_brokerIdx + 1) % PEER_BROKERS.length;
 }
 
+function nextLobbyBroker() {
+  _lobbyBrokerIdx = (_lobbyBrokerIdx + 1) % PEER_BROKERS.length;
+}
+
 function currentBrokerName() {
   const b = PEER_BROKERS[_brokerIdx] || PEER_BROKERS[0];
   return b.host;
@@ -75,12 +102,21 @@ function brokerDown() {
   return _brokerDownCount < PEER_BROKERS.length * 2;
 }
 
+// Variasi untuk lobby publik (memakai broker sendiri, tidak mengganggu broker room).
+function lobbyBrokerDown() {
+  _brokerDownCount += 1;
+  nextLobbyBroker();
+  return _brokerDownCount < PEER_BROKERS.length * 2;
+}
+
 // Buat Peer dengan watchdog: kalau broker mati (open tak kunjung tiba dalam X detik),
 // hancurkan & panggil opts.onBrokerDown supaya caller mencoba broker berikutnya.
+// opts.broker (opsional) memaksa broker tertentu (dipakai lobby publik).
 function makePeer(id, opts) {
   const o = opts || {};
-  const peer = new Peer(id, peerConfig(_brokerIdx));
-  peer._brokerName = currentBrokerName();
+  const brokerIdx = o.broker !== undefined ? o.broker : _brokerIdx;
+  const peer = new Peer(id, peerConfig(brokerIdx));
+  peer._brokerName = PEER_BROKERS[brokerIdx].host;
   let opened = false;
   peer.on('open', () => {
     opened = true;
@@ -1737,8 +1773,11 @@ function createRoom(isPublic, capacity) {
   spawnHostPeer();
 }
 
-function spawnHostPeer() {
-  const code = randomCode(6);
+function spawnHostPeer(prevCode) {
+  // Kode room dibuat sekali; kalau broker mati, ulang pakai KODE YANG SAMA di
+  // broker berikutnya (jangan ganti kode — client menghitung broker dari kode).
+  const code = prevCode || randomCode(6);
+  if (!prevCode) _brokerIdx = brokerForCode(code);
   const peerId = PEER_PREFIX + code;
 
   let peer;
@@ -1751,7 +1790,7 @@ function spawnHostPeer() {
         return;
       }
       gameState.peer = null;
-      spawnHostPeer();
+      spawnHostPeer(code);
     }
   });
   gameState.peer = peer;
@@ -2148,9 +2187,10 @@ function lobbyEnsure() {
   if (gameState.lobby.peer && !gameState.lobby.peer.destroyed) return;
   let p;
   p = makePeer(LOBBY_PEER_ID, {
+    broker: _lobbyBrokerIdx,
     onBrokerDown: () => {
       if (gameState.lobby.peer !== p) return;
-      if (!brokerDown()) {
+      if (!lobbyBrokerDown()) {
         gameState.lobby.peer = null;
         return;
       }
@@ -2206,9 +2246,10 @@ function lobbyEnsure() {
 function lobbyConnectClient() {
   let p;
   p = makePeer(undefined, {
+    broker: _lobbyBrokerIdx,
     onBrokerDown: () => {
       if (gameState.lobby.peer !== p) return;
-      if (!brokerDown()) {
+      if (!lobbyBrokerDown()) {
         gameState.lobby.peer = null;
         return;
       }
@@ -2686,8 +2727,11 @@ function joinRoom(code, isReconnect) {
   const targetId = PEER_PREFIX + cleanCode;
   const session = loadSession();
   const resumeId = (session && session.code === cleanCode && session.playerId) || null;
+  // Ikuti broker yang sama dengan host (dihitung dari kode room). Hanya dihitung
+  // saat percobaan pertama; saat retry/reconnect biarkan broker sekarang berjalan.
+  if (!isReconnect) _brokerIdx = brokerForCode(cleanCode);
 
-  const failRetry = () => {
+  const failRetry = (advance) => {
     if (!_joinActive) return;
     _joinActive = false;
     _joinAttempts += 1;
@@ -2702,7 +2746,7 @@ function joinRoom(code, isReconnect) {
       }
       return;
     }
-    nextBroker();
+    if (advance) nextBroker();
     try {
       if (gameState.peer && !gameState.peer.destroyed) gameState.peer.destroy();
     } catch (e) { /* ignore */ }
@@ -2716,7 +2760,7 @@ function joinRoom(code, isReconnect) {
   let peer;
   peer = makePeer(undefined, {
     onBrokerDown: () => {
-      if (gameState.peer === peer) failRetry();
+      if (gameState.peer === peer) failRetry(true);
     }
   });
   gameState.peer = peer;
@@ -2783,8 +2827,17 @@ function joinRoom(code, isReconnect) {
 
   peer.on('error', (err) => {
     if (gameState.peer !== peer) return;
-    if (err.type === 'peer-unavailable' || err.type === 'server-error' || err.type === 'socket-error' || err.type === 'network') {
-      failRetry();
+    if (err.type === 'server-error' || err.type === 'socket-error' || err.type === 'network') {
+      // Broker-nya sendiri yang bermasalah → lanjut ke broker berikutnya
+      // (mengikuti urutan fallback yang sama dengan host).
+      failRetry(true);
+      return;
+    }
+    if (err.type === 'peer-unavailable') {
+      // Host TIDAK terdaftar di broker ini. Pindah broker = pasti gagal (host
+      // hanya di satu broker), jadi coba ulang broker yang sama dulu; pindah
+      // hanya sesekali untuk mengejar host yang keburu fallback ke broker lain.
+      failRetry(_joinAttempts % 3 === 2);
       return;
     }
     clearTimeout(joinTimeout);
