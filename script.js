@@ -1492,8 +1492,24 @@ function broadcastState() {
   gameState.players.forEach((p, idx) => {
     const payload = makeStatePayload(type, idx);
     if (p.isMe) {
-      applyStatePayload(payload);
-    } else if (p.conn && p.conn.open) {
+      // Host = sumber kebenaran. Jangan timpa state lokal lewat applyStatePayload,
+      // karena payload serialnya HANYA memuat hand/handCount untuk penerima sendiri
+      // dan tidak membawa referensi `conn` — menerapkannya ke host akan menghapus
+      // koneksi client dan kartu tangan semua pemain lain, sehingga kartu tangan
+      // pemain lokal menjadi kosong. Cukup render ulang UI host dari state asli.
+      if (gameState.gameStarted) {
+        if (gameState.screenState !== 'gameplay') {
+          showScreen('gameplay');
+          DOM.roomInfoDisplay.textContent = `Room: ${gameState.roomCode}`;
+        }
+        renderGameplay();
+      } else {
+        if (gameState.screenState !== 'room') showScreen('room');
+        renderWaitingRoom(payload);
+      }
+      return;
+    }
+    if (p.conn && p.conn.open) {
       p.conn.send(payload);
     }
   });
@@ -1760,6 +1776,8 @@ function spawnHostPeer() {
     if (gameState.isPublic) {
       lobbyEnsure();
       setTimeout(lobbyRegister, 1200);
+      clearInterval(lobbyHeartbeatTimer);
+      lobbyHeartbeatTimer = setInterval(lobbyHeartbeat, 10000);
     }
   });
 
@@ -2113,8 +2131,16 @@ function makeLobbyRoomInfo() {
     players: gameState.players.length,
     capacity: gameState.roomCapacity,
     isPublic: gameState.isPublic,
-    members: gameState.players.map((p) => p.name)
+    members: gameState.players.map((p) => p.name),
+    ts: Date.now()
   };
+}
+
+// Heartbeat: host room publik mengirim ulang registrasi ke lobby tiap X detik
+// supaya daftar room tidak berisi room "zombie" (host sudah mati/reload).
+let lobbyHeartbeatTimer = null;
+function lobbyHeartbeat() {
+  if (gameState.isHost && gameState.isPublic && gameState.roomCode) lobbyRegister();
 }
 
 // Coba jadi keeper lobby; jika ID sudah dipakai orang lain, jadi client.
@@ -2301,10 +2327,15 @@ function lobbyRefresh() {
 
 function renderPublicRooms() {
   const list = DOM.publicRoomList;
+  const now = Date.now();
+  // Bersihkan room yang sudah lama tanpa heartbeat (host mati/reload tak sempat unregister).
+  gameState.lobby.rooms = gameState.lobby.rooms.filter(
+    (r) => r && r.code && r.isPublic && (now - (r.ts || 0) < 30000)
+  );
   const merged = [];
   const seen = new Set();
   gameState.lobby.rooms.forEach((r) => {
-    if (!r.isPublic || seen.has(r.code)) return;
+    if (seen.has(r.code)) return;
     seen.add(r.code);
     merged.push(r);
   });
@@ -2313,9 +2344,9 @@ function renderPublicRooms() {
     list.innerHTML = '<li class="list-empty">Belum ada room publik. Buat room atau segarkan.</li>';
     return;
   }
-  list.innerHTML = rooms.map((r) => `
-    <li class="room-row">
-      <span class="room-emoji">🎉</span>
+  list.innerHTML = rooms.map((r, i) => `
+    <li class="room-row" style="animation-delay:${Math.min(i * 60, 480)}ms">
+      <span class="room-emoji">${escapeHtml(r.hostAvatar || '🎉')}</span>
       <div class="room-meta">
         <div class="room-name">${escapeHtml(r.hostName || 'Host')}</div>
         <div class="room-detail">Kode: ${escapeHtml(r.code)} · ${r.players}/${r.capacity} pemain</div>
@@ -2550,7 +2581,8 @@ function updateServerStatus() {
     return;
   }
   if (gameState.auth.serverOk) {
-    setConnectionState('online', 'Server Online');
+    const broker = currentBrokerName();
+    setConnectionState('online', broker ? `Server Online · ${broker}` : 'Server Online');
   } else {
     setConnectionState('connecting', 'Menghubungkan...');
   }
@@ -2620,6 +2652,18 @@ function renderLeaderboard() {
    ============================================ */
 
 let joinTimeout = null;
+
+// Feedback tombol "GABUNG" saat sedang mencoba koneksi ke room.
+function setJoinBusy(busy) {
+  if (!DOM.joinPrivateBtn) return;
+  if (busy) {
+    DOM.joinPrivateBtn.disabled = true;
+    DOM.joinPrivateBtn.textContent = 'Menghubungkan…';
+  } else {
+    DOM.joinPrivateBtn.disabled = false;
+    DOM.joinPrivateBtn.textContent = 'GABUNG';
+  }
+}
 let _joinAttempts = 0;
 let _joinActive = false;
 
@@ -2627,6 +2671,7 @@ function joinRoom(code, isReconnect) {
   resetOnlineState();
   _joinActive = true;
   if (!isReconnect) _joinAttempts = 0;
+  if (gameState.screenState === 'lobby') setJoinBusy(true);
   gameState.gameMode = 'online';
   gameState.isOnline = true;
   gameState.isHost = false;
@@ -2652,8 +2697,7 @@ function joinRoom(code, isReconnect) {
         clearSession();
         leaveGame();
       } else {
-        DOM.joinPrivateBtn.disabled = false;
-        DOM.joinPrivateBtn.textContent = 'GABUNG';
+        setJoinBusy(false);
         showToast('Room tidak ditemukan. Periksa kode & koneksi.');
       }
       return;
@@ -2711,8 +2755,7 @@ function joinRoom(code, isReconnect) {
           if (gameState.screenState === 'lobby') {
             updateServerStatus();
             showToast('Gagal masuk room. Periksa kode & coba lagi.');
-            DOM.joinPrivateBtn.disabled = false;
-            DOM.joinPrivateBtn.textContent = 'GABUNG';
+            setJoinBusy(false);
           }
         }
       }, 8000);
@@ -2747,8 +2790,7 @@ function joinRoom(code, isReconnect) {
     clearTimeout(joinTimeout);
     stopStatePolling();
     _joinActive = false;
-    DOM.joinPrivateBtn.disabled = false;
-    DOM.joinPrivateBtn.textContent = 'GABUNG';
+    setJoinBusy(false);
     updateServerStatus();
     showToast('Gagal terhubung: ' + err.type);
   });
@@ -2860,6 +2902,7 @@ function resetOnlineState() {
   gameState.direction = 1;
   gameState.lastTopId = null;
   clearTimeout(gameState.botTimer);
+  clearInterval(lobbyHeartbeatTimer);
   clearBotChat();
 }
 
@@ -3073,9 +3116,17 @@ function renderWaitingRoom(data) {
   // Refresh total setiap polling — jangan append, agar nama tidak muncul ganda.
   list.innerHTML = '';
   const players = dedupePlayers(data.players || []);
-  players.forEach((p) => {
+  // Animasi pop hanya saat jumlah pemain berubah (pemain baru masuk), bukan tiap polling.
+  const prevCount = DOM.waitingPlayersList._prevCount || 0;
+  const animate = players.length !== prevCount;
+  DOM.waitingPlayersList._prevCount = players.length;
+  players.forEach((p, i) => {
     const li = document.createElement('li');
     if (p.isBot) li.className = 'bot-row';
+    if (animate) {
+      li.classList.add('enter');
+      li.style.animationDelay = `${Math.min(i * 90, 540)}ms`;
+    }
     li.textContent = `${p.avatar || '👤'} ${p.name}${p.isMe ? ' (Kamu)' : ''}${p.isHost ? ' 👑' : ''}${p.isBot ? ' 🤖 BOT' : ''}`;
     list.appendChild(li);
   });
@@ -3498,13 +3549,11 @@ DOM.joinPrivateBtn.addEventListener('click', () => {
   gameState.gameMode = 'online';
   DOM.roomInfoDisplay.textContent = 'Mode: Online';
   joining = true;
-  DOM.joinPrivateBtn.disabled = true;
-  DOM.joinPrivateBtn.textContent = '...';
+  setJoinBusy(true);
   joinRoom(code);
   setTimeout(() => {
     joining = false;
-    DOM.joinPrivateBtn.disabled = false;
-    DOM.joinPrivateBtn.textContent = 'GABUNG';
+    if (!gameState.connected) setJoinBusy(false);
   }, 10000);
 });
 
@@ -3514,8 +3563,22 @@ DOM.roomCodeInput.addEventListener('keydown', (e) => {
   }
 });
 
-DOM.refreshRoomsBtn.addEventListener('click', () => {
+// Segarkan daftar room publik dengan animasi spin pada tombol refresh.
+function refreshRooms() {
+  const btn = DOM.refreshRoomsBtn;
+  if (btn) {
+    btn.classList.add('spinning');
+    btn.disabled = true;
+    setTimeout(() => {
+      btn.classList.remove('spinning');
+      btn.disabled = false;
+    }, 700);
+  }
   lobbyRefresh();
+}
+
+DOM.refreshRoomsBtn.addEventListener('click', () => {
+  refreshRooms();
   showToast('Memperbarui daftar room...');
 });
 

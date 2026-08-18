@@ -254,6 +254,20 @@ select { font-family: inherit; color: inherit; }
   padding: 14px;
 }
 
+/* Entri berjenjang (stagger) elemen lobby saat masuk layar */
+#lobby-screen.screen-active .dash-header,
+#lobby-screen.screen-active .dash-main > .panel,
+#lobby-screen.screen-active .dash-main > .connection-status,
+#lobby-screen.screen-active .dash-side > .side-widget {
+  animation: riseIn .5s cubic-bezier(.2, .8, .3, 1) backwards;
+}
+#lobby-screen.screen-active .dash-header { animation-delay: 0s; }
+#lobby-screen.screen-active .dash-main > .panel { animation-delay: .08s; }
+#lobby-screen.screen-active .dash-main > .connection-status { animation-delay: .16s; }
+#lobby-screen.screen-active .dash-side > .side-widget:nth-child(1) { animation-delay: .12s; }
+#lobby-screen.screen-active .dash-side > .side-widget:nth-child(2) { animation-delay: .2s; }
+#lobby-screen.screen-active .dash-side > .side-widget:nth-child(3) { animation-delay: .28s; }
+
 /* Banner logo SVG UNO DUEL di lobby (digantikan dash-logo) */
 .logo-banner { display: none; }
 
@@ -450,6 +464,8 @@ select { font-family: inherit; color: inherit; }
   background: var(--yellow);
 }
 .refresh-btn:active { transform: rotate(45deg); }
+.refresh-btn.spinning { animation: refreshSpin .65s ease; pointer-events: none; opacity: .85; }
+@keyframes refreshSpin { to { transform: rotate(360deg); } }
 
 .public-room-list {
   list-style: none;
@@ -469,6 +485,13 @@ select { font-family: inherit; color: inherit; }
   border: 2px solid var(--black);
   border-radius: var(--radius);
   background: var(--grey);
+  animation: riseIn .4s cubic-bezier(.2, .8, .3, 1) backwards;
+  transition: transform .08s ease, box-shadow .08s ease;
+}
+.room-row:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 4px 4px 0 0 var(--black);
+  background: #fff;
 }
 .room-row .room-emoji { font-size: 20px; }
 .room-row .room-meta { flex: 1; min-width: 0; }
@@ -481,8 +504,23 @@ select { font-family: inherit; color: inherit; }
   border: 2.5px solid var(--black);
   border-radius: 8px;
   background: var(--yellow);
+  animation: joinPulse 2.4s ease-in-out infinite;
 }
-.room-row .room-join:hover { box-shadow: 3px 3px 0 0 var(--black); }
+.room-row .room-join:hover { box-shadow: 3px 3px 0 0 var(--black); animation-play-state: paused; }
+@keyframes joinPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 212, 0, .7); }
+  50% { box-shadow: 0 0 0 5px rgba(255, 212, 0, 0); }
+}
+@keyframes riseIn {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.public-room-list li.list-empty { color: #9a9a9a; font-size: 12.5px; padding: 4px 2px; animation: emptyFloat 2.6s ease-in-out infinite; }
+.side-list li.list-empty { animation: emptyFloat 2.6s ease-in-out infinite; }
+@keyframes emptyFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
 
 .connection-status {
   display: flex;
@@ -503,9 +541,14 @@ select { font-family: inherit; color: inherit; }
   border: 2px solid var(--black);
   background: #ef4444;
 }
-.status-online { background: #22c55e; }
-.status-connecting { background: var(--yellow); }
+.status-online { background: #22c55e; animation: dotPulse 2.2s ease-in-out infinite; }
+.status-connecting { background: var(--yellow); animation: dotBlink 1.1s step-end infinite; }
 .status-offline { background: #ef4444; }
+@keyframes dotPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, .55); }
+  50% { box-shadow: 0 0 0 7px rgba(34, 197, 94, 0); }
+}
+@keyframes dotBlink { 50% { opacity: .3; } }
 
 /* ============================================================
    SIDEBAR
@@ -576,6 +619,20 @@ select { font-family: inherit; color: inherit; }
   border: 2.5px solid var(--black);
   padding: 4px 12px; border-radius: var(--radius);
   background: var(--yellow); color: var(--black);
+  position: relative;
+  overflow: hidden;
+}
+.room-code-row strong::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, .6) 50%, transparent 70%);
+  transform: translateX(-130%);
+  animation: codeShine 3.2s ease-in-out infinite;
+}
+@keyframes codeShine {
+  0%, 55% { transform: translateX(-130%); }
+  100% { transform: translateX(130%); }
 }
 .copy-btn {
   width: 42px; height: 42px; font-size: 16px;
@@ -597,7 +654,12 @@ select { font-family: inherit; color: inherit; }
   background: var(--grey);
   font-weight: 700; font-size: 13.5px;
 }
+.waiting-players-list li.enter { animation: popIn .4s cubic-bezier(.34, 1.56, .64, 1) both; }
 .waiting-players-list li.bot-row { border-style: dashed; background: var(--yellow); }
+@keyframes popIn {
+  from { opacity: 0; transform: scale(.7) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
 .waiting-status { text-align: center; font-size: 12.5px; color: #555; }
 
 /* ============================================================
