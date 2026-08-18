@@ -177,6 +177,8 @@ const gameState = {
   pendingWild: null,
   passPending: false,
   log: [],
+  chatHistory: [],
+  seenChatIds: new Set(),
   gameStarted: false
 };
 
@@ -450,6 +452,27 @@ function playEmoteSound(name) {
    ============================================ */
 
 function appendChat(msg) {
+  if (!msg) return;
+  if (msg.id) {
+    if (gameState.seenChatIds.has(msg.id)) return;
+    gameState.seenChatIds.add(msg.id);
+  }
+  const entry = {
+    id: msg.id || null,
+    kind: msg.kind === 'emote' ? 'emote' : 'msg',
+    avatar: msg.avatar || '👤',
+    from: msg.from || '',
+    text: msg.text !== undefined ? msg.text : '',
+    emote: msg.emote !== undefined ? msg.emote : ''
+  };
+  gameState.chatHistory.push(entry);
+  if (gameState.chatHistory.length > 60) {
+    gameState.chatHistory.splice(0, gameState.chatHistory.length - 60);
+  }
+  renderChatEntry(entry);
+}
+
+function renderChatEntry(msg) {
   const el = document.createElement('div');
 
   if (msg.kind === 'emote') {
@@ -472,16 +495,27 @@ function appendChat(msg) {
   DOM.chatMessages.scrollTop = DOM.chatMessages.scrollHeight;
 }
 
+function syncChatHistory(list) {
+  const incoming = Array.isArray(list) ? list : [];
+  if (incoming.length === gameState.chatHistory.length) return;
+  gameState.chatHistory = [];
+  gameState.seenChatIds.clear();
+  DOM.chatMessages.innerHTML = '';
+  incoming.forEach((m) => appendChat(m));
+}
+
 function sendChatMessage(text) {
   const msg = (text || '').trim();
   if (!msg) return;
   const me = myPlayer();
 
   if (gameState.isOnline) {
+    const payload = { type: 'chat', id: makeId(), from: me.name, avatar: me.avatar, text: msg };
+    appendChat({ id: payload.id, kind: 'msg', from: payload.from, avatar: payload.avatar, text: payload.text });
     if (gameState.isHost) {
-      broadcastChat({ from: me.name, avatar: me.avatar, text: msg });
+      forwardChat(payload, null);
     } else if (gameState.conn && gameState.conn.open) {
-      gameState.conn.send({ type: 'chat', text: msg });
+      gameState.conn.send(payload);
     }
   } else {
     appendChat({ kind: 'msg', avatar: me.avatar, from: me.name, text: msg });
@@ -494,10 +528,12 @@ function sendEmote(emote, sound) {
   const me = myPlayer();
 
   if (gameState.isOnline) {
+    const payload = { type: 'chat', id: makeId(), from: me.name, avatar: me.avatar, emote };
+    appendChat({ id: payload.id, kind: 'emote', from: payload.from, avatar: payload.avatar, emote: payload.emote });
     if (gameState.isHost) {
-      broadcastChat({ from: me.name, avatar: me.avatar, emote });
+      forwardChat(payload, null);
     } else if (gameState.conn && gameState.conn.open) {
-      gameState.conn.send({ type: 'chat', emote });
+      gameState.conn.send(payload);
     }
   } else {
     appendChat({ kind: 'emote', avatar: me.avatar, from: me.name, emote });
@@ -505,12 +541,13 @@ function sendEmote(emote, sound) {
   }
 }
 
-function broadcastChat(msg) {
+// Host forwards a chat packet to every connected client except the sender.
+function forwardChat(msg, excludePeer) {
   gameState.players.forEach((p) => {
-    if (p.isMe) {
-      appendChat({ ...msg, kind: msg.emote ? 'emote' : 'msg' });
-    } else if (p.conn && p.conn.open) {
-      p.conn.send({ type: 'chat', from: msg.from, avatar: msg.avatar, text: msg.text, emote: msg.emote });
+    if (p.isMe) return;
+    if (excludePeer && p.id === excludePeer) return;
+    if (p.conn && p.conn.open) {
+      p.conn.send({ type: 'chat', id: msg.id, from: msg.from, avatar: msg.avatar, text: msg.text, emote: msg.emote });
     }
   });
 }
@@ -719,6 +756,7 @@ function makeStatePayload(recipientIdx) {
     deckCount: gameState.deck.length,
     winner: gameState.winner ? { name: gameState.winner.name } : null,
     players: shared,
+    chatHistory: gameState.chatHistory,
     myHand: (gameState.players[recipientIdx] || {}).hand || []
   };
 }
@@ -782,6 +820,8 @@ function applyStatePayload(payload) {
     hand: idx === payload.playerIndex ? payload.myHand : []
   }));
   gameState.gameStarted = true;
+
+  syncChatHistory(payload.chatHistory);
 
   if (gameState.screenState !== 'gameplay') {
     showScreen('gameplay');
@@ -892,10 +932,13 @@ function handleHostMessage(conn, data) {
     }
 
     case 'chat': {
+      if (data.id && gameState.seenChatIds.has(data.id)) break;
       const player = gameState.players.find((p) => p.id === conn.peer);
       if (!player) return;
-      broadcastChat({ from: player.name, avatar: player.avatar, text: data.text, emote: data.emote });
+      const msg = { id: data.id, from: player.name, avatar: player.avatar, text: data.text, emote: data.emote };
+      appendChat({ ...msg, kind: msg.emote ? 'emote' : 'msg' });
       if (data.emote) playEmoteSound(emoteSoundOf(data.emote));
+      forwardChat(msg, conn.peer);
       break;
     }
 
@@ -1010,6 +1053,8 @@ function startOnlineGame() {
 
   DOM.colorPicker.classList.add('hidden');
   DOM.chatMessages.innerHTML = '';
+  gameState.chatHistory = [];
+  gameState.seenChatIds.clear();
   addLog('🃏 Ronde dimulai!');
   broadcastState();
 }
@@ -1057,6 +1102,9 @@ function joinRoom(code) {
   });
 
   peer.on('error', (err) => {
+    joining = false;
+    DOM.joinRoomBtn.disabled = false;
+    DOM.joinRoomBtn.textContent = 'Gabung';
     if (err.type === 'peer-unavailable') {
       setConnectionStatus('❌ Room tidak ditemukan');
       showToast('Room tidak ditemukan. Periksa kode.');
@@ -1086,12 +1134,9 @@ function handleClientData(data) {
     }
 
     case 'chat': {
-      if (data.emote) {
-        appendChat({ kind: 'emote', avatar: data.avatar, from: data.from, emote: data.emote });
-        playEmoteSound(emoteSoundOf(data.emote));
-      } else {
-        appendChat({ kind: 'msg', avatar: data.avatar, from: data.from, text: data.text });
-      }
+      if (data.id && gameState.seenChatIds.has(data.id)) break;
+      appendChat({ id: data.id, kind: data.emote ? 'emote' : 'msg', avatar: data.avatar, from: data.from, text: data.text, emote: data.emote });
+      if (data.emote) playEmoteSound(emoteSoundOf(data.emote));
       break;
     }
 
@@ -1217,6 +1262,8 @@ function resetLocalGame() {
 
   DOM.colorPicker.classList.add('hidden');
   DOM.chatMessages.innerHTML = '';
+  gameState.chatHistory = [];
+  gameState.seenChatIds.clear();
   addLog('🃏 Ronde dimulai!');
   renderGameplay();
 }
@@ -1571,7 +1618,10 @@ DOM.createRoomBtn.addEventListener('click', () => {
   createRoom();
 });
 
+let joining = false;
+
 DOM.joinRoomBtn.addEventListener('click', () => {
+  if (joining) return;
   const code = DOM.roomCodeInput.value.trim().toUpperCase();
   if (!code) {
     showToast('Masukkan kode room');
@@ -1579,7 +1629,15 @@ DOM.joinRoomBtn.addEventListener('click', () => {
   }
   gameState.gameMode = 'online';
   DOM.roomInfoDisplay.textContent = 'Mode: Online';
+  joining = true;
+  DOM.joinRoomBtn.disabled = true;
+  DOM.joinRoomBtn.textContent = 'Menghubungkan...';
   joinRoom(code);
+  setTimeout(() => {
+    joining = false;
+    DOM.joinRoomBtn.disabled = false;
+    DOM.joinRoomBtn.textContent = 'Gabung';
+  }, 12000);
 });
 
 DOM.roomCodeInput.addEventListener('keydown', (e) => {
