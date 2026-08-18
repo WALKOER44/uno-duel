@@ -116,7 +116,7 @@ function shuffleDeck(deck) {
 // Stok kartu tengah menyesuaikan jumlah pemain (semakin banyak pemain, semakin banyak kartu).
 function createDeckFor(playerCount) {
   const full = shuffleDeck(createDeck());
-  const stock = Math.min(full.length, 24 + (playerCount - 1) * 12);
+  const stock = Math.min(full.length, 20 + (playerCount - 1) * 10);
   return full.slice(0, stock);
 }
 
@@ -1942,11 +1942,22 @@ function renderPlayerPanel() {
       <span class="row-avatar">${player.avatar || '👤'}</span>
       <span class="row-name">${escapeHtml(nameDisplay)}${player.isHost ? ' 👑' : ''}${isMe ? ' (Kamu)' : ''}</span>
       ${player.isBot ? '<span class="row-bot">BOT</span>' : ''}
+      <span class="mini-stack" title="${count} kartu">${miniStackHTML(count)}</span>
       <span class="row-count">${count}</span>
       ${player.hasUno && !gameState.winner ? '<span class="row-uno">UNO</span>' : ''}
     `;
     container.appendChild(li);
   });
+}
+
+// Miniatur tumpukan kartu (bagian belakang kartu) untuk pemain lain / bot
+function miniStackHTML(count) {
+  const shown = Math.max(1, Math.min(count, 4));
+  let out = '';
+  for (let i = 0; i < shown; i += 1) {
+    out += '<span class="mini-card"></span>';
+  }
+  return out;
 }
 
 function renderPlayerDock() {
