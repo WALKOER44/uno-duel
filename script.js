@@ -93,8 +93,10 @@ function makeId() {
 }
 
 function createCard(color, value) {
+  const id = makeId();
   return {
-    id: makeId(),
+    id,
+    card_id: id,
     color,
     value,
     displayColor: color,
@@ -136,6 +138,27 @@ function createDeckFor(playerCount) {
   const full = shuffleDeck(createDeck());
   const stock = Math.min(full.length, 20 + (playerCount - 1) * 10);
   return full.slice(0, stock);
+}
+
+// Hapus kartu duplikat (id sama) dari sebuah tangan — mencegah kartu ganda akibat bug sinkronisasi.
+function dedupeCards(hand) {
+  const seen = new Set();
+  return (hand || []).filter((c) => {
+    if (!c || !c.id) return true;
+    if (seen.has(c.id)) return false;
+    seen.add(c.id);
+    return true;
+  });
+}
+
+// Hapus pemain duplikat (id sama) dari daftar — mencegah nama muncul ganda di ruang tunggu.
+function dedupePlayers(players) {
+  const seen = new Set();
+  return (players || []).filter((p) => {
+    if (!p || !p.id || seen.has(p.id)) return false;
+    seen.add(p.id);
+    return true;
+  });
 }
 
 // ATURAN: warna sama ATAU angka/simbol sama dengan kartu tumpukan atas.
@@ -226,6 +249,7 @@ const gameState = {
   isPublic: false,
   botTimer: null,
   resyncTimer: null,
+  pollTimer: null,
 
   // ROOM / GAME STATE (host otoritatif)
   players: [],
@@ -958,6 +982,7 @@ function makeStatePayload(type, recipientIdx) {
 }
 
 function broadcastState() {
+  gameState.players = dedupePlayers(gameState.players);
   const type = gameState.gameStarted ? 'SYNC_STATE' : 'ROOM_UPDATE';
   gameState.players.forEach((p, idx) => {
     const payload = makeStatePayload(type, idx);
@@ -984,7 +1009,9 @@ function applyStatePayload(data) {
     isBot: !!sp.isBot,
     hasUno: !!sp.hasUno,
     handCount: sp.handCount,
-    hand: idx === (data.gameState || {}).playerIndex ? (data.gameState || {}).myHand : []
+    hand: idx === (data.gameState || {}).playerIndex
+      ? dedupeCards((data.gameState || {}).myHand || [])
+      : []
   }));
 
   const gs = data.gameState || {};
@@ -1056,6 +1083,63 @@ function startResync() {
 function stopResync() {
   clearInterval(gameState.resyncTimer);
   gameState.resyncTimer = null;
+}
+
+/* ============================================
+   POLLING STATUS & SESSION (Client)
+   ============================================ */
+
+// Polling berkala: client terus meminta state terbaru dari host (SYNC_REQ).
+// Ini mencegah client "stuck" di Ruang Tunggu saat host sudah memulai game,
+// dan memastikan layar selalu berpindah ke arena begitu status berubah jadi 'playing'.
+function startStatePolling() {
+  stopStatePolling();
+  if (gameState.isHost || !gameState.isOnline) return;
+  const tick = () => {
+    if (gameState.conn && gameState.conn.open) {
+      gameState.conn.send({ type: 'SYNC_REQ' });
+    }
+    // Lebih cepat di ruang tunggu (cegah stuck), lebih longgar saat gameplay (resync host sudah jalan).
+    const ms = gameState.screenState === 'gameplay' ? 4000 : 2000;
+    gameState.pollTimer = setTimeout(tick, ms);
+  };
+  tick();
+}
+
+function stopStatePolling() {
+  clearTimeout(gameState.pollTimer);
+  gameState.pollTimer = null;
+}
+
+// Simpan sesi room (untuk recovery saat halaman di-refresh).
+function saveSession() {
+  try {
+    sessionStorage.setItem('unoduel_session', JSON.stringify({
+      code: gameState.roomCode,
+      playerId: (gameState.peer && gameState.peer.id) || '',
+      name: getPlayerName(),
+      avatar: gameState.playerProfile.avatar || '👦',
+      ts: Date.now()
+    }));
+  } catch (e) {
+    /* ignore */
+  }
+}
+
+function clearSession() {
+  try {
+    sessionStorage.removeItem('unoduel_session');
+  } catch (e) {
+    /* ignore */
+  }
+}
+
+function loadSession() {
+  try {
+    return JSON.parse(sessionStorage.getItem('unoduel_session') || 'null');
+  } catch (e) {
+    return null;
+  }
 }
 
 /* ============================================
@@ -1145,34 +1229,61 @@ function handleHostData(conn, data) {
 
   switch (data.type) {
     case 'JOIN_ROOM': {
+      const playerInfo = data.player || {};
+      const resumeId = data.resumeId || null;
+
+      // Sambung ulang / recovery setelah reload: cocokkan pemain lama via resumeId.
+      let existing = gameState.players.find((p) => p.id === conn.peer);
+      if (!existing && resumeId) {
+        existing = gameState.players.find((p) => p.id === resumeId);
+      }
+
+      if (existing) {
+        existing.id = conn.peer;
+        existing.conn = conn;
+        existing.name = playerInfo.name || existing.name;
+        existing.avatar = playerInfo.avatar || existing.avatar;
+        clearTimeout(existing.disconnectTimer);
+        existing.disconnectTimer = null;
+        if (gameState.gameStarted) {
+          // Kirim state penuh agar pemain langsung kembali ke arena game yang benar.
+          conn.send(makeStatePayload('SYNC_STATE', gameState.players.indexOf(existing)));
+          return;
+        }
+        broadcastState();
+        return;
+      }
+
       if (gameState.gameStarted) {
         conn.send({ type: 'TOAST', message: 'Game sudah dimulai' });
         return;
       }
-      const playerInfo = data.player || {};
-      const existing = gameState.players.find((p) => p.id === conn.peer);
-      if (existing) {
-        existing.name = playerInfo.name || existing.name;
-        existing.avatar = playerInfo.avatar || existing.avatar;
-      } else {
-        if (gameState.players.length >= gameState.roomCapacity) {
-          conn.send({ type: 'TOAST', message: 'Ruangan penuh' });
-          return;
-        }
-        gameState.players.push({
-          id: conn.peer,
-          name: playerInfo.name || 'Pemain',
-          avatar: playerInfo.avatar || '👤',
-          isMe: false,
-          isHost: false,
-          isBot: false,
-          conn,
-          hand: [],
-          hasUno: false
-        });
+      if (gameState.players.length >= gameState.roomCapacity) {
+        conn.send({ type: 'TOAST', message: 'Ruangan penuh' });
+        return;
       }
+      gameState.players.push({
+        id: conn.peer,
+        name: playerInfo.name || 'Pemain',
+        avatar: playerInfo.avatar || '👤',
+        isMe: false,
+        isHost: false,
+        isBot: false,
+        conn,
+        hand: [],
+        hasUno: false
+      });
+      gameState.players = dedupePlayers(gameState.players);
       broadcastState();
       if (gameState.isPublic) lobbyRegister();
+      break;
+    }
+
+    // Polling status room dari client: balas dengan state terbaru (ruang tunggu / arena).
+    case 'SYNC_REQ': {
+      const idx = gameState.players.findIndex((p) => p.id === conn.peer);
+      if (idx === -1) return;
+      conn.send(makeStatePayload('SYNC_STATE', idx));
       break;
     }
 
@@ -1260,7 +1371,28 @@ function handleGameAction(idx, conn, msg, isLocal) {
 function handleClientDisconnect(conn) {
   const idx = gameState.players.findIndex((p) => p.id === conn.peer);
   if (idx === -1) return;
-  const name = gameState.players[idx].name;
+  const player = gameState.players[idx];
+  const name = player.name;
+
+  // Grace period: beri kesempatan pemain sambung ulang (mis. reload halaman) sebelum dikeluarkan.
+  if (gameState.gameStarted && !player.isBot && !player.disconnectTimer) {
+    player.disconnectTimer = setTimeout(() => {
+      finishClientDisconnect(conn, name);
+    }, 5000);
+    addLog(`${name} putus — menunggu sambung ulang...`);
+    return;
+  }
+
+  // Timer sudah berjalan (error + close dipanggil dua kali) -> abaikan duplikat.
+  if (player.disconnectTimer) return;
+
+  finishClientDisconnect(conn, name);
+}
+
+function finishClientDisconnect(conn, name) {
+  const idx = gameState.players.findIndex((p) => p.id === conn.peer);
+  if (idx === -1) return;
+  clearTimeout(gameState.players[idx].disconnectTimer);
   gameState.players.splice(idx, 1);
 
   const connIdx = gameState.connections.indexOf(conn);
@@ -1775,11 +1907,15 @@ function joinRoom(code) {
   }
 
   const targetId = PEER_PREFIX + cleanCode;
+  const session = loadSession();
+  const resumeId = (session && session.code === cleanCode && session.playerId) || null;
 
   const peer = new Peer(undefined, peerConfig());
   gameState.peer = peer;
 
   peer.on('open', () => {
+    gameState.roomCode = cleanCode;
+    saveSession();
     const conn = peer.connect(targetId, { reliable: true });
     gameState.conn = conn;
 
@@ -1788,16 +1924,18 @@ function joinRoom(code) {
 
     conn.on('open', () => {
       gameState.connected = true;
-      gameState.roomCode = cleanCode;
       hideDisconnectBanner();
       updateServerStatus();
       conn.send({
         type: 'JOIN_ROOM',
+        resumeId,
         player: {
           name: getPlayerName(),
           avatar: gameState.playerProfile.avatar || '👦'
         }
       });
+      // Polling status room agar tidak pernah stuck di ruang tunggu.
+      startStatePolling();
       // Timeout: jika belum masuk room dalam 8 detik, anggap gagal
       clearTimeout(joinTimeout);
       joinTimeout = setTimeout(() => {
@@ -1831,6 +1969,7 @@ function joinRoom(code) {
 
   peer.on('error', (err) => {
     clearTimeout(joinTimeout);
+    stopStatePolling();
     DOM.joinPrivateBtn.disabled = false;
     DOM.joinPrivateBtn.textContent = 'GABUNG';
     if (err.type === 'peer-unavailable') {
@@ -1885,6 +2024,8 @@ function handleClientData(data) {
 
 function handleHostDisconnect() {
   clearTimeout(joinTimeout);
+  stopStatePolling();
+  clearSession();
   showToast('Host keluar dari room');
   leaveGame();
 }
@@ -1896,6 +2037,7 @@ function handleHostDisconnect() {
 function resetOnlineState() {
   clearTimeout(joinTimeout);
   stopResync();
+  stopStatePolling();
   gameState.roomCode = '';
   gameState.playerIndex = 0;
   gameState.isHost = false;
@@ -1932,6 +2074,8 @@ function leaveGame() {
   }
   gameState.conn = null;
   gameState.connections = [];
+  stopStatePolling();
+  clearSession();
   DOM.colorPicker.classList.add('hidden');
   hideWinnerOverlay();
   hideDisconnectBanner();
@@ -2113,15 +2257,17 @@ function enterWaitingRoom(code) {
 
 function renderWaitingRoom(data) {
   const list = DOM.waitingPlayersList;
+  // Refresh total setiap polling — jangan append, agar nama tidak muncul ganda.
   list.innerHTML = '';
-  (data.players || []).forEach((p) => {
+  const players = dedupePlayers(data.players || []);
+  players.forEach((p) => {
     const li = document.createElement('li');
     if (p.isBot) li.className = 'bot-row';
     li.textContent = `${p.avatar || '👤'} ${p.name}${p.isMe ? ' (Kamu)' : ''}${p.isHost ? ' 👑' : ''}${p.isBot ? ' 🤖 BOT' : ''}`;
     list.appendChild(li);
   });
 
-  const count = (data.players || []).length;
+  const count = players.length;
   const capacity = data.capacity || gameState.roomCapacity || count;
   DOM.waitingRoomCode.textContent = data.roomCode || gameState.roomCode;
   DOM.waitingCapacity.textContent = `Kapasitas: ${count} / ${capacity}`;
@@ -2226,7 +2372,7 @@ function renderPlayerDock() {
     return;
   }
 
-  const hand = me.hand || [];
+  const hand = dedupeCards(me.hand || []);
   const isTurn = isMyTurn() && !gameState.winner;
   const turnBadge = isTurn ? '<span class="turn-badge">● Giliran Kamu</span>' : '';
 
@@ -2360,7 +2506,7 @@ function renderGameplay() {
   }
 
   const me = myPlayer();
-  const unoVisible = me && me.hand.length === 1 && !me.hasUno && !gameState.winner;
+  const unoVisible = me && dedupeCards(me.hand || []).length === 1 && !me.hasUno && !gameState.winner;
   DOM.unoBtn.classList.toggle('hidden', !unoVisible);
   DOM.passBtn.disabled = !isMyTurn();
 }
@@ -2752,6 +2898,26 @@ function init() {
   // Ambil daftar room publik & daftar pemain online saat lobby dibuka
   lobbyEnsure();
   setTimeout(lobbyRefresh, 2000);
+
+  // Recovery: jika halaman di-refresh di tengah permainan, sambung ulang ke room.
+  tryAutoRejoin();
+}
+
+// Setelah reload, sambung otomatis ke room yang masih tersimpan di sessionStorage.
+// Host akan membalas state penuh (kartu, meja, giliran) sehingga game langsung pulih.
+function tryAutoRejoin() {
+  const sess = loadSession();
+  if (!sess || !sess.code) return;
+  if (Date.now() - (sess.ts || 0) > 12 * 60 * 60 * 1000) {
+    clearSession();
+    return;
+  }
+  gameState.gameMode = 'online';
+  DOM.roomInfoDisplay.textContent = 'Mode: Online';
+  showToast('Menghubungkan kembali ke room...');
+  setTimeout(() => {
+    if (!gameState.roomCode) joinRoom(sess.code);
+  }, 300);
 }
 
 init();
