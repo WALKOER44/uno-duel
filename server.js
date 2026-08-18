@@ -69,7 +69,9 @@ app.get('/status', (_req, res) => {
 // ---- 3. Frontend statis (folder repo ini) ----
 app.use(express.static(__dirname));
 
-const PORT = process.env.PORT || 9000;
-server.listen(PORT, () => {
-  console.log('UNO Duel relay + frontend berjalan di :' + PORT);
+// PORT dinamis dari Railway (atau 3000 sebagai fallback lokal).
+// Bind ke '0.0.0.0' agar Railway proxy bisa menjangkau aplikasi (mencegah 502).
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, '0.0.0.0', () => {
+  console.log('Server running on port ' + PORT);
 });
