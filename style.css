@@ -454,12 +454,15 @@ select { font-family: inherit; color: inherit; }
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Mencegah seat/bubble bocor keluar arena (ke topbar / dock pemain) */
+  overflow: hidden;
+  padding: 4px;
 }
 
 /* Meja hijau utama di tengah */
 .table {
-  width: min(400px, 58vw);
-  height: min(260px, 38vh);
+  width: min(380px, 56vw);
+  height: min(248px, 36vh);
   border-radius: 44% 44% 50% 50% / 36% 36% 42% 42%;
   background:
     radial-gradient(circle at 50% 28%, #3bbd63, #238a44 55%, #176b33 100%);
@@ -472,7 +475,8 @@ select { font-family: inherit; color: inherit; }
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 8px;
+  padding: 14px 12px;
   position: relative;
   z-index: 3;
 }
@@ -492,6 +496,9 @@ select { font-family: inherit; color: inherit; }
   padding: 4px 12px;
   box-shadow: 2px 2px 0 0 var(--black);
   white-space: nowrap;
+  max-width: min(52vw, 300px);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .active-color-indicator {
   font-size: 11px; font-weight: 900; color: var(--black);
@@ -628,6 +635,47 @@ select { font-family: inherit; color: inherit; }
 
 .seat.turn .seat-cards { filter: drop-shadow(0 0 7px rgba(255, 212, 0, .95)); }
 .seat.turn .seat-label { background: var(--yellow); }
+
+/* Bubble chat bot (komik style) — muncul di atas seat saat bot "bicara" */
+.seat-bubble {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  max-width: 200px;
+  width: max-content;
+  background: var(--white);
+  color: var(--black);
+  border: 2.5px solid var(--black);
+  border-radius: 12px;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.25;
+  text-align: center;
+  box-shadow: 2px 2px 0 0 var(--black);
+  animation: bubblePop .25s ease;
+  pointer-events: none;
+  white-space: normal;
+}
+.seat-bubble::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 7px solid transparent;
+  border-top-color: var(--black);
+}
+.seat-bubble.fade-out {
+  opacity: 0;
+  transition: opacity .3s ease;
+}
+@keyframes bubblePop {
+  0% { transform: translateX(-50%) translateY(8px) scale(.5); opacity: 0; }
+  100% { transform: translateX(-50%) translateY(0) scale(1); opacity: 1; }
+}
 
 /* ============================================================
    DOCK PEMAIN
@@ -910,7 +958,9 @@ select { font-family: inherit; color: inherit; }
   .turn-indicator { font-size: 10px; padding: 3px 9px; }
   .active-color-indicator { font-size: 10px; padding: 2px 8px; }
   .table-label { display: none; }
-  .seat-label { max-width: 108px; font-size: 10px; padding: 2px 6px; }
+  .seat-label { max-width: 96px; font-size: 10px; padding: 2px 6px; }
+  .seat-label .seat-name { display: none; }
   .seat-card { width: 14px; height: 21px; margin-left: -7px; }
+  .seat-bubble { max-width: 140px; font-size: 10px; padding: 4px 8px; }
   .chat-panel { width: calc(100vw - 16px); right: 8px; bottom: 8px; }
 }

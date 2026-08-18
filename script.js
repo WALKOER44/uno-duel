@@ -263,6 +263,9 @@ const gameState = {
   pendingWild: null,
   pairSelect: null,
   passPending: false,
+  botChat: null,          // { index, text, until } bubble chat bot terakhir
+  botChatTimer: null,
+  lastShownBotChatTs: 0,  // dedupe bubble pada client (anti-muncul berulang tiap sync)
   log: [],
   chatHistory: [],
   seenChatIds: new Set(),
@@ -779,6 +782,10 @@ function setActiveColor(playedCard, chosenColor) {
   gameState.currentColor = (chosenColor || playedCard.chosenColor) || playedCard.color || null;
 }
 
+function clampNum(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
 function roomPlayCard(playerIdx, cardIdx, color = null) {
   const player = gameState.players[playerIdx];
   const card = player.hand[cardIdx];
@@ -806,12 +813,20 @@ function roomPlayCard(playerIdx, cardIdx, color = null) {
     addLog(`🎉 ${player.name} MENANG!`);
     showToast(`${player.name} Menang!`);
     playSound('win');
-    if (!player.isBot) recordWin(player.name);
+    if (!player.isBot) {
+      recordWin(player.name);
+      // Bot yang kalah protes
+      const loser = gameState.players.find((p) => p.isBot);
+      if (loser) botSpeak(gameState.players.indexOf(loser), 'lose');
+    } else {
+      botSpeak(playerIdx, 'win');
+    }
     return true;
   }
 
   if (player.hand.length === 1) {
     player.hasUno = false;
+    if (player.isBot) botSpeak(playerIdx, 'uno');
   }
 
   let nextIdx = playerIdx;
@@ -820,6 +835,7 @@ function roomPlayCard(playerIdx, cardIdx, color = null) {
     nextIdx = nextTurn(nextIdx);
     nextIdx = nextTurn(nextIdx);
     addLog('⏭ Skip!');
+    if (player.isBot) botSpeak(playerIdx, 'skip');
   } else if (card.value === 'reverse') {
     gameState.direction *= -1;
     if (gameState.players.length === 2) {
@@ -832,6 +848,7 @@ function roomPlayCard(playerIdx, cardIdx, color = null) {
     for (let i = 0; i < 2; i += 1) drawCardFor(nextIdx);
     addLog(`${target.name} ambil +2`);
     playSound('action');
+    if (target.isBot) botSpeak(nextIdx, 'draw2');
     nextIdx = nextTurn(nextIdx);
   } else if (card.value === 'wild4') {
     nextIdx = nextTurn(nextIdx);
@@ -839,9 +856,11 @@ function roomPlayCard(playerIdx, cardIdx, color = null) {
     for (let i = 0; i < 4; i += 1) drawCardFor(nextIdx);
     addLog(`${target.name} ambil +4`);
     playSound('action');
+    if (target.isBot) botSpeak(nextIdx, 'draw4');
     nextIdx = nextTurn(nextIdx);
   } else {
     nextIdx = nextTurn(nextIdx);
+    if (player.isBot && Math.random() < 0.4) botSpeak(playerIdx, 'play');
   }
 
   gameState.currentPlayer = nextIdx;
@@ -863,6 +882,106 @@ function canStartPair(card, top, hand) {
   if (ACTION_VALUES.includes(card.value)) return false;
   if (card.value !== top.value) return false;
   return (hand || []).filter((c) => c && c.value === card.value).length >= 2;
+}
+
+/* ============================================================
+   BOT CHAT & EMOTE — dialog seru dengan bubble di atas seat
+   ============================================================ */
+
+const BOT_LINES = {
+  draw2: [
+    'Waduh curang nih! 😭🔥',
+    'Anjir +2, sabar sabar...',
+    'Cih, nunggu aja balasannya! 😤',
+    'Sialan, jangan-jangan kalian kompak! 😩'
+  ],
+  draw4: [
+    'Anjir malah +4, sabar sabar...',
+    'Sialan lu! 🤬🃏',
+    '+4?? Ini mah teror! 💀',
+    'Gila sih, +4 terus wkwk 😭'
+  ],
+  uno: [
+    'UNO! Dikit lagi menang nih cuy 😎✨',
+    'Jangan dablek ya, tinggal sisa satu!',
+    'Sisa satu, siap-siap kalah! 😜',
+    'Udah ditebak bakal menang gue 😏'
+  ],
+  skip: [
+    'Mampus skip! Giliran gua nih wkwk 😜',
+    'Skip dulu deh, makan tuh! 🚫',
+    'Kasihan deh kena skip 😂',
+    'Skip! Jangan marah ya, gue emang jago 😎'
+  ],
+  win: [
+    'GILA GILA GILA MENANG! 🏆🔥',
+    'EZZZZ menang cuy 😎',
+    'Noob! Gampang banget wkwk 🤣',
+    'Juara! Makan tuh kartu kalian! 🏆'
+  ],
+  lose: [
+    'Yaah kalah... rematch! 😭',
+    'Kamu beruntung kali ini! 🙄',
+    'Sebentar lagi aja gue menang 😤',
+    'Wah gila, pantau terus! 👀'
+  ],
+  greeting: [
+    'Awas ya, gue mainnya ganas 😈',
+    'Siap-siap kalah, gue pro! 🏆',
+    'Jangan nangis ya kalau kalah 🤭',
+    'Semangat perang! 🔥'
+  ],
+  play: [
+    'Gas pol! 🔥',
+    'Nih kartu gue 🃏',
+    'Ini baru namanya main! 💪',
+    'Saksikan skill gue 😎'
+  ]
+};
+
+function randomLine(category) {
+  const arr = BOT_LINES[category] || BOT_LINES.play;
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+// Munculkan bubble di atas seat bot (host: langsung; online: ikut dibroadcast via state)
+function botSpeak(playerIdx, category) {
+  const p = gameState.players[playerIdx];
+  if (!p || !p.isBot) return;
+  const text = randomLine(category);
+  gameState.botChat = { index: playerIdx, text, until: Date.now() + 3500, ts: Date.now() };
+  renderSeats();
+  clearTimeout(gameState.botChatTimer);
+  gameState.botChatTimer = setTimeout(() => {
+    if (gameState.botChat && gameState.botChat.until <= Date.now()) {
+      gameState.botChat = null;
+      renderSeats();
+    }
+  }, 3600);
+}
+
+// Terapkan bubble dari state host (client online)
+function applyBotChat(chat) {
+  if (!chat || !chat.index || !chat.text) return;
+  if (chat.ts && chat.ts === gameState.lastShownBotChatTs) return;
+  gameState.lastShownBotChatTs = chat.ts || 0;
+  gameState.botChat = { index: chat.index, text: chat.text, until: Date.now() + 3500 };
+  if (gameState.screenState === 'gameplay') {
+    renderSeats();
+  }
+  clearTimeout(gameState.botChatTimer);
+  gameState.botChatTimer = setTimeout(() => {
+    if (gameState.botChat && gameState.botChat.until <= Date.now()) {
+      gameState.botChat = null;
+      renderSeats();
+    }
+  }, 3600);
+}
+
+function clearBotChat() {
+  clearTimeout(gameState.botChatTimer);
+  gameState.botChat = null;
+  gameState.botChatTimer = null;
 }
 
 // Mainkan 2 kartu sekaligus (dobel). Warna aktif = warna kartu kedua.
@@ -1042,6 +1161,9 @@ function makeStatePayload(type, recipientIdx) {
     capacity: gameState.roomCapacity,
     isPublic: gameState.isPublic,
     players,
+    botChat: gameState.botChat
+      ? { index: gameState.botChat.index, text: gameState.botChat.text, ts: gameState.botChat.ts }
+      : null,
     gameState: {
       playerIndex: recipientIdx,
       currentPlayer: gameState.currentPlayer,
@@ -1098,6 +1220,7 @@ function applyStatePayload(data) {
   gameState.deckCount = gs.deckCount;
   gameState.winner = gs.winner ? { name: gs.winner.name } : null;
 
+  applyBotChat(data.botChat);
   syncChatHistory(gs.chatHistory);
 
   if (!data.started) {
@@ -1550,6 +1673,12 @@ function startOnlineGame() {
   broadcastState();
   hostBotTurn();
   startResync();
+
+  // Bot sapa pembuka biar suasana hidup
+  setTimeout(() => {
+    const b = gameState.players.findIndex((p) => p.isBot);
+    if (b > -1 && !gameState.winner) botSpeak(b, 'greeting');
+  }, 1200);
 }
 
 /* ============================================
@@ -2144,6 +2273,7 @@ function resetOnlineState() {
   gameState.direction = 1;
   gameState.lastTopId = null;
   clearTimeout(gameState.botTimer);
+  clearBotChat();
 }
 
 function leaveGame() {
@@ -2251,6 +2381,12 @@ function resetLocalGame(botCount = 1) {
   gameState.seenChatIds.clear();
   addLog('🃏 Ronde dimulai!');
   renderGameplay();
+
+  // Bot sapa pembuka biar suasana hidup
+  setTimeout(() => {
+    const b = gameState.players.findIndex((p) => p.isBot);
+    if (b > -1 && !gameState.winner) botSpeak(b, 'greeting');
+  }, 1200);
 }
 
 function drawLocal() {
@@ -2408,22 +2544,36 @@ function renderSeats() {
   const meIdx = myIndex();
   const n = players.length;
   const compact = window.innerWidth < 640;
-  const radiusX = compact ? 37 : (n > 6 ? 40 : 44);
-  const radiusY = compact ? 35 : (n > 6 ? 38 : 42);
+
+  // Radius dinamis: posisi seat dipastikan TIDAK lebih dekat dari `clearance` px ke tepi meja,
+  // sekaligus tetap di dalam arena (diklem). Radius besar = seat makin jauh dari meja (aman).
+  const arenaW = container.clientWidth || window.innerWidth;
+  const arenaH = container.clientHeight || window.innerHeight;
+  const tableW = Math.min(380, arenaW * 0.56);
+  const tableH = Math.min(248, arenaH * 0.36);
+  const clearance = compact ? 14 : 26; // jarak bebas minimum ke tepi meja (px)
+  const baseX = compact ? 38 : (n > 6 ? 40 : 44);
+  const baseY = compact ? 34 : (n > 6 ? 38 : 42);
+  const minX = (tableW / 2 + clearance) / arenaW * 100;
+  const minY = (tableH / 2 + clearance) / arenaH * 100;
+  const radiusX = clampNum(Math.max(baseX, minX), 16, 44);
+  const radiusY = clampNum(Math.max(baseY, minY), 16, 42);
 
   players.forEach((player, idx) => {
     if (idx === meIdx) return;
 
     const angleDeg = seatAngleDeg(idx);
     const rad = (angleDeg * Math.PI) / 180;
-    const x = 50 + radiusX * Math.cos(rad);
-    const y = 50 + radiusY * Math.sin(rad);
+    // Clamp agar seat (termasuk label & bubble) tetap berada dalam arena
+    const x = clampNum(50 + radiusX * Math.cos(rad), 7, 93);
+    const y = clampNum(50 + radiusY * Math.sin(rad), 9, 86);
     const rot = angleDeg - 90; // arah kartu menghadap ke tengah meja
     const count = opponentHandCount(player);
     const isTurn = !gameState.winner && idx === gameState.currentPlayer;
 
     const seat = document.createElement('div');
     seat.className = 'seat';
+    seat.dataset.pid = String(idx);
     if (isTurn) seat.classList.add('turn');
     seat.style.left = `${x}%`;
     seat.style.top = `${y}%`;
@@ -2450,6 +2600,15 @@ function renderSeats() {
 
     seat.appendChild(cards);
     seat.appendChild(label);
+
+    // Bubble chat bot (muncul otomatis, hilang sendiri setelah ±3,5 detik)
+    if (gameState.botChat && gameState.botChat.index === idx && Date.now() < gameState.botChat.until) {
+      const bubble = document.createElement('div');
+      bubble.className = 'seat-bubble';
+      bubble.textContent = gameState.botChat.text;
+      seat.appendChild(bubble);
+    }
+
     container.appendChild(seat);
   });
 }
