@@ -698,6 +698,20 @@ select { font-family: inherit; color: inherit; }
 .uno-card.static { cursor: default; box-shadow: none; }
 .uno-card.playable { cursor: pointer; transition: transform .1s ease; }
 .uno-card.playable:hover { transform: translateY(-10px) scale(1.05); }
+.uno-card.selected { transform: translateY(-12px) scale(1.08); box-shadow: 0 0 0 3px var(--black), var(--shadow); }
+.uno-card.selected:hover { transform: translateY(-16px) scale(1.1); }
+
+.pair-hint {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--black);
+  background: var(--yellow);
+  border: 2px solid var(--black);
+  border-radius: 999px;
+  padding: 4px 12px;
+  margin-top: 6px;
+  text-align: center;
+}
 
 .card-corner { position: absolute; font-size: clamp(10px, 2.4vw, 15px); line-height: 1; }
 .card-corner.tl { top: 4px; left: 5px; }

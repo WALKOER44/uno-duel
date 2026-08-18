@@ -208,8 +208,8 @@ function cardFace(card) {
   `;
 }
 
-function cardButtonHTML(card, idx, playable) {
-  const cls = `uno-card ${cardColorClass(card)}${playable ? ' playable' : ''}`;
+function cardButtonHTML(card, idx, playable, selected = false) {
+  const cls = `uno-card ${cardColorClass(card)}${playable ? ' playable' : ''}${selected ? ' selected' : ''}`;
   return `<button class="${cls}" data-index="${idx}" data-value="${card.value}">${cardFace(card)}</button>`;
 }
 
@@ -261,6 +261,7 @@ const gameState = {
   currentColor: null,
   winner: null,
   pendingWild: null,
+  pairSelect: null,
   passPending: false,
   log: [],
   chatHistory: [],
@@ -336,6 +337,7 @@ const DOM = {
   playerDock: document.getElementById('player-dock'),
   playerDockHeader: document.getElementById('player-dock-header'),
   myHand: document.getElementById('my-hand'),
+  pairHint: document.getElementById('pair-hint'),
   passBtn: document.getElementById('pass-btn'),
   unoBtn: document.getElementById('uno-btn'),
 
@@ -846,6 +848,68 @@ function roomPlayCard(playerIdx, cardIdx, color = null) {
   return true;
 }
 
+// Apakah dua kartu bisa dimainkan dobel: angkanya sama (boleh beda warna) dan cocok dengan kartu teratas.
+function canPair(cardA, cardB, top) {
+  if (!cardA || !cardB || !top) return false;
+  if (cardA.id === cardB.id) return false;
+  if (ACTION_VALUES.includes(cardA.value) || ACTION_VALUES.includes(cardB.value)) return false;
+  if (cardA.value !== cardB.value) return false;
+  return cardA.value === top.value;
+}
+
+// Kartu bisa memulai pilihan dobel bila angkanya cocok dengan kartu atas dan masih ada >= 2 kartu angka itu.
+function canStartPair(card, top, hand) {
+  if (!card || !top) return false;
+  if (ACTION_VALUES.includes(card.value)) return false;
+  if (card.value !== top.value) return false;
+  return (hand || []).filter((c) => c && c.value === card.value).length >= 2;
+}
+
+// Mainkan 2 kartu sekaligus (dobel). Warna aktif = warna kartu kedua.
+function roomPlayPair(playerIdx, cardIdxA, cardIdxB, color = null) {
+  const player = gameState.players[playerIdx];
+  if (!player) return false;
+
+  const cardA = player.hand[cardIdxA];
+  const cardB = player.hand[cardIdxB];
+  const top = topCard();
+
+  if (!canPair(cardA, cardB, top)) {
+    addLog('❌ Kartu dobel tidak cocok!');
+    showToast('Angka harus sama dengan kartu atas');
+    return false;
+  }
+
+  const lastIdx = Math.max(cardIdxA, cardIdxB);
+  const firstIdx = Math.min(cardIdxA, cardIdxB);
+  const second = player.hand.splice(lastIdx, 1)[0];
+  const first = player.hand.splice(firstIdx, 1)[0];
+
+  const playedFirst = { ...first, displayColor: color || first.color };
+  const playedSecond = { ...second, displayColor: color || second.color };
+  setActiveColor(playedSecond, color);
+  gameState.discard.push(playedFirst);
+  gameState.discard.push(playedSecond);
+  addLog(`${player.name} main dobel ${getCardLabel(first)}`);
+  playSound('click');
+
+  if (player.hand.length === 0) {
+    gameState.winner = player;
+    addLog(`🎉 ${player.name} MENANG!`);
+    showToast(`${player.name} Menang!`);
+    playSound('win');
+    if (!player.isBot) recordWin(player.name);
+    return true;
+  }
+
+  if (player.hand.length === 1) {
+    player.hasUno = false;
+  }
+
+  gameState.currentPlayer = nextTurn(playerIdx);
+  return true;
+}
+
 function afterRoomChange() {
   if (gameState.isOnline && gameState.isHost) {
     broadcastState();
@@ -1340,6 +1404,15 @@ function handleGameAction(idx, conn, msg, isLocal) {
     return;
   }
 
+  // Dobel: mainkan 2 kartu angka sama sekaligus
+  if (action === 'PLAY_PAIR') {
+    if (idx !== gameState.currentPlayer) return;
+    const inds = d.cardIndices || [];
+    if (inds.length !== 2) return;
+    if (roomPlayPair(idx, inds[0], inds[1], d.chosenColor)) afterRoomChange();
+    return;
+  }
+
   // PASS wajib ambil 1 kartu; kalau hasil draw bisa dimainkan -> tetap giliran
   if (action === 'PASS' || action === 'DRAW') {
     if (idx !== gameState.currentPlayer) return;
@@ -1464,6 +1537,7 @@ function startOnlineGame() {
   gameState.currentColor = (first || { color: 'red' }).color;
   gameState.winner = null;
   gameState.pendingWild = null;
+  gameState.pairSelect = null;
   gameState.gameStarted = true;
   gameState.log = [];
 
@@ -2058,6 +2132,7 @@ function resetOnlineState() {
   gameState.gameStarted = false;
   gameState.winner = null;
   gameState.pendingWild = null;
+  gameState.pairSelect = null;
   gameState.passPending = false;
   gameState.currentColor = null;
   gameState.players = [];
@@ -2165,6 +2240,7 @@ function resetLocalGame(botCount = 1) {
   gameState.currentColor = (first || { color: 'red' }).color;
   gameState.winner = null;
   gameState.pendingWild = null;
+  gameState.pairSelect = null;
   gameState.gameStarted = true;
   gameState.log = [];
 
@@ -2388,7 +2464,11 @@ function renderPlayerDock() {
 
   const hand = dedupeCards(me.hand || []);
   const isTurn = isMyTurn() && !gameState.winner;
+  if (!isTurn && gameState.pairSelect) gameState.pairSelect = null;
   const turnBadge = isTurn ? '<span class="turn-badge">● Giliran Kamu</span>' : '';
+  const pairSelect = gameState.pairSelect;
+  const pairValue = pairSelect ? pairSelect.value : null;
+  const pairCardId = pairSelect ? pairSelect.cardId : null;
 
   DOM.playerDockHeader.innerHTML = `
     <span class="seat-avatar">${me.avatar || '👤'}</span>
@@ -2398,8 +2478,13 @@ function renderPlayerDock() {
   `;
 
   DOM.myHand.innerHTML = hand
-    .map((card, ci) => cardButtonHTML(card, ci, isTurn && isValidMove(card, topCard())))
+    .map((card, ci) => cardButtonHTML(card, ci, isTurn && isValidMove(card, topCard()), pairCardId !== null && card.id === pairCardId))
     .join('');
+
+  DOM.pairHint.classList.toggle('hidden', pairValue === null);
+  if (pairValue !== null) {
+    DOM.pairHint.textContent = `Kartu ${pairValue} dipilih — ketuk kartu angka ${pairValue} lain untuk main dobel, atau ketuk lagi untuk main 1`;
+  }
 
   DOM.playerDock.classList.toggle('dock-active', isTurn);
 
@@ -2545,8 +2630,16 @@ function playMyCard(idx, color) {
   } else if (roomPlayCard(0, idx, color)) afterRoomChange();
 }
 
+// Mainkan 2 kartu dobel sekaligus (angka sama, warna boleh beda).
+function playMyPair(idxA, idxB, color) {
+  if (gameState.isOnline) {
+    sendAction('PLAY_PAIR', { cardIndices: [idxA, idxB], chosenColor: color });
+  } else if (roomPlayPair(0, idxA, idxB, color)) afterRoomChange();
+}
+
 function drawAction() {
   gameState.passPending = false;
+  gameState.pairSelect = null;
   if (gameState.isOnline) {
     sendAction('DRAW');
   } else {
@@ -2556,6 +2649,7 @@ function drawAction() {
 
 function passAction() {
   if (gameState.winner || !isMyTurn()) return;
+  gameState.pairSelect = null;
   if (gameState.isOnline) {
     sendAction('PASS');
   } else {
@@ -2743,13 +2837,46 @@ DOM.myHand.addEventListener('click', (e) => {
   const card = me.hand[idx];
   if (!card) return;
 
+  // Wild / +4 -> pilih warna dulu (dobel hanya untuk kartu angka)
   if (card.color === 'wild' || card.value === 'wild4') {
+    gameState.pairSelect = null;
     gameState.pendingWild = idx;
     DOM.colorPicker.classList.remove('hidden');
     return;
   }
 
   gameState.passPending = false;
+  const top = topCard();
+  const sel = gameState.pairSelect;
+
+  // Ada pilihan: ketuk kartu angka yang sama -> main dobel
+  if (sel) {
+    const firstIdx = me.hand.findIndex((c) => c && c.id === sel.cardId);
+    if (firstIdx > -1 && firstIdx !== idx && canPair(me.hand[firstIdx], card, top)) {
+      gameState.pairSelect = null;
+      playMyPair(firstIdx, idx);
+      return;
+    }
+    // Ketuk kartu yang sama lagi -> main 1 kartu
+    if (firstIdx === idx) {
+      gameState.pairSelect = null;
+      playMyCard(idx);
+      return;
+    }
+    // Kartu lain yang tidak cocok dipasangkan -> main 1 kartu
+    gameState.pairSelect = null;
+    playMyCard(idx);
+    return;
+  }
+
+  // Belum ada pilihan: kartu yang memungkinkan dobel -> pilih dulu
+  if (canStartPair(card, top, me.hand)) {
+    gameState.pairSelect = { value: card.value, cardId: card.id };
+    renderPlayerDock();
+    playSound('click');
+    return;
+  }
+
   playMyCard(idx);
 });
 
@@ -2801,6 +2928,7 @@ DOM.colorButtons.forEach((btn) => {
 DOM.colorPicker.addEventListener('click', (e) => {
   if (e.target === DOM.colorPicker) {
     gameState.pendingWild = null;
+    gameState.pairSelect = null;
     DOM.colorPicker.classList.add('hidden');
   }
 });
