@@ -1041,7 +1041,6 @@ function createRoom(isPublic, capacity) {
   gameState.isHost = true;
   gameState.isPublic = !!isPublic;
   gameState.roomCapacity = Math.max(MIN_PLAYERS, Math.min(MAX_PLAYERS, parseInt(capacity, 10) || gameState.roomCapacity || 4));
-  setConnectionState('connecting', 'Menghubungkan...');
   spawnHostPeer();
 }
 
@@ -1052,13 +1051,12 @@ function spawnHostPeer() {
   const peer = new Peer(peerId, peerConfig());
   gameState.peer = peer;
 
-  setConnectionState('connecting', 'Menghubungkan...');
 
   peer.on('open', () => {
     gameState.roomCode = code;
     gameState.connected = true;
     hideDisconnectBanner();
-    setConnectionState('online', 'Online');
+    updateServerStatus();
     gameState.players = [{
       id: peer.id,
       name: getPlayerName(),
@@ -1089,8 +1087,7 @@ function spawnHostPeer() {
   });
 
   peer.on('disconnected', () => {
-    setConnectionState('connecting', 'Menghubungkan ulang...');
-    showDisconnectBanner('⚠️ Koneksi Terputus — mencoba menghubungkan ulang...');
+      showDisconnectBanner('⚠️ Koneksi Terputus — mencoba menghubungkan ulang...');
     if (gameState.peer && !gameState.peer.destroyed) {
       setTimeout(() => {
         try {
@@ -1110,7 +1107,7 @@ function spawnHostPeer() {
       return;
     }
     if (err.type === 'peer-unavailable') return;
-    setConnectionState('offline', 'Offline');
+    updateServerStatus();
     showToast('Gagal membuat room: ' + err.type);
   });
 }
@@ -1336,7 +1333,7 @@ function lobbyEnsure() {
   p.on('open', () => {
     gameState.lobby.keeper = true;
     // Broker PeerJS terhubung -> status Online (di lobby/ruang tunggu)
-    if (!gameState.gameStarted) setConnectionState('online', 'Online');
+    if (!gameState.gameStarted) updateServerStatus();
     p.on('connection', (conn) => {
       conn.on('open', () => {
         gameState.lobby.conns.add(conn);
@@ -1360,8 +1357,7 @@ function lobbyEnsure() {
       lobbyConnectClient();
     } else {
       if (!gameState.connected && !gameState.gameStarted) {
-        setConnectionState('connecting', 'Menghubungkan ulang...');
-      }
+            }
     }
   });
 
@@ -1381,7 +1377,7 @@ function lobbyConnectClient() {
   gameState.lobby.peer = p;
 
   p.on('open', () => {
-    if (!gameState.gameStarted) setConnectionState('online', 'Online');
+    if (!gameState.gameStarted) updateServerStatus();
     const conn = p.connect(LOBBY_PEER_ID, { reliable: true });
     gameState.lobby.conn = conn;
     conn.on('open', () => {
@@ -1646,6 +1642,12 @@ async function checkServerHealth() {
   } catch (e) {
     gameState.auth.serverOk = false;
   }
+  updateServerStatus();
+}
+
+// Status indikator murni dari kesehatan server (Vercel/Neon),
+// tidak dipengaruhi fluktuasi koneksi PeerJS broker.
+function updateServerStatus() {
   setConnectionState(
     gameState.auth.serverOk ? 'online' : 'offline',
     gameState.auth.serverOk ? 'Server Online' : 'Server Offline'
@@ -1723,7 +1725,6 @@ function joinRoom(code) {
     return;
   }
 
-  setConnectionState('connecting', 'Menghubungkan...');
   const targetId = PEER_PREFIX + cleanCode;
 
   const peer = new Peer(undefined, peerConfig());
@@ -1740,7 +1741,7 @@ function joinRoom(code) {
       gameState.connected = true;
       gameState.roomCode = cleanCode;
       hideDisconnectBanner();
-      setConnectionState('online', 'Online');
+      updateServerStatus();
       conn.send({
         type: 'JOIN_ROOM',
         player: {
@@ -1753,7 +1754,7 @@ function joinRoom(code) {
       joinTimeout = setTimeout(() => {
         if (gameState.screenState === 'lobby' || !gameState.gameStarted) {
           if (gameState.screenState === 'lobby') {
-            setConnectionState('offline', 'Offline');
+            updateServerStatus();
             showToast('Gagal masuk room. Periksa kode & coba lagi.');
             DOM.joinPrivateBtn.disabled = false;
             DOM.joinPrivateBtn.textContent = 'GABUNG';
@@ -1767,8 +1768,7 @@ function joinRoom(code) {
   });
 
   peer.on('disconnected', () => {
-    setConnectionState('connecting', 'Menghubungkan ulang...');
-    showDisconnectBanner('⚠️ Koneksi Terputus — mencoba menghubungkan ulang...');
+      showDisconnectBanner('⚠️ Koneksi Terputus — mencoba menghubungkan ulang...');
     if (gameState.peer && !gameState.peer.destroyed) {
       setTimeout(() => {
         try {
@@ -1785,10 +1785,10 @@ function joinRoom(code) {
     DOM.joinPrivateBtn.disabled = false;
     DOM.joinPrivateBtn.textContent = 'GABUNG';
     if (err.type === 'peer-unavailable') {
-      setConnectionState('offline', 'Offline');
+      updateServerStatus();
       showToast('Room tidak ditemukan. Periksa kode.');
     } else {
-      setConnectionState('offline', 'Offline');
+      updateServerStatus();
       showToast('Gagal terhubung: ' + err.type);
     }
   });
@@ -1888,7 +1888,7 @@ function leaveGame() {
   hideDisconnectBanner();
   closeSettings();
   resetOnlineState();
-  setConnectionState('offline', 'Offline');
+  updateServerStatus();
   showScreen('lobby');
 }
 
