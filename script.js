@@ -218,7 +218,7 @@ function cardButtonHTML(card, idx, playable, selected = false) {
    ============================================ */
 
 const gameState = {
-  screenState: 'lobby', // 'lobby' | 'room' | 'gameplay'
+  screenState: 'auth', // 'auth' | 'lobby' | 'room' | 'gameplay'
   gameMode: 'solo',     // 'solo' | 'online'
   playerProfile: {
     name: 'Pemain',
@@ -230,8 +230,10 @@ const gameState = {
     avatar: '👦',
     serverOk: false,
     dbOk: false,
-    failStreak: 0
+    failStreak: 0,
+    isGuest: false
   },
+  authMode: 'login',
   me: null,
 
   soundEnabled: true,
@@ -293,22 +295,23 @@ function getPlayerName() {
    ============================================ */
 
 const DOM = {
+  authScreen: document.getElementById('auth-screen'),
   lobbyScreen: document.getElementById('lobby-screen'),
   roomScreen: document.getElementById('room-screen'),
   gameplayScreen: document.getElementById('gameplay-screen'),
 
   authUsername: document.getElementById('auth-username'),
   authPassword: document.getElementById('auth-password'),
-  authLoginBtn: document.getElementById('auth-login-btn'),
-  authRegisterBtn: document.getElementById('auth-register-btn'),
-  authLogoutBtn: document.getElementById('auth-logout-btn'),
+  authTabLogin: document.getElementById('auth-tab-login'),
+  authTabRegister: document.getElementById('auth-tab-register'),
+  authSubmitBtn: document.getElementById('auth-submit-btn'),
+  authGuestBtn: document.getElementById('auth-guest-btn'),
   authMsg: document.getElementById('auth-msg'),
-  authBox: document.getElementById('auth-box'),
-  authProfile: document.getElementById('auth-profile'),
-  authUserLabel: document.getElementById('auth-user-label'),
+  authLeaderboardList: document.getElementById('auth-leaderboard-list'),
   avatarBtns: [...document.querySelectorAll('.avatar-btn')],
   createRoomBtn: document.getElementById('create-room-btn'),
   createPrivateBtn: document.getElementById('create-private-btn'),
+  authCreateRoomBtn: document.getElementById('auth-create-room-btn'),
   soloBtn: document.getElementById('solo-btn'),
   soloBots: document.getElementById('solo-bots'),
   joinPrivateBtn: document.getElementById('join-private-btn'),
@@ -320,6 +323,12 @@ const DOM = {
   leaderboardList: document.getElementById('leaderboard-list'),
   connectionStatus: document.getElementById('connection-status'),
   connectionDot: document.getElementById('connection-dot'),
+
+  dashName: document.getElementById('dash-name'),
+  dashAvatar: document.getElementById('dash-avatar'),
+  dashStats: document.getElementById('dash-stats'),
+  dashLogoutBtn: document.getElementById('dash-logout-btn'),
+  dashNavBtns: [...document.querySelectorAll('.dash-nav-btn')],
 
   waitingRoomCode: document.getElementById('waiting-room-code'),
   waitingCapacity: document.getElementById('waiting-capacity'),
@@ -379,11 +388,15 @@ const DOM = {
    ============================================ */
 
 function showScreen(screenName) {
+  if (DOM.authScreen) DOM.authScreen.classList.remove('screen-active');
   DOM.lobbyScreen.classList.remove('screen-active');
   DOM.roomScreen.classList.remove('screen-active');
   DOM.gameplayScreen.classList.remove('screen-active');
 
-  if (screenName === 'lobby') {
+  if (screenName === 'auth') {
+    if (DOM.authScreen) DOM.authScreen.classList.add('screen-active');
+    gameState.screenState = 'auth';
+  } else if (screenName === 'lobby') {
     DOM.lobbyScreen.classList.add('screen-active');
     gameState.screenState = 'lobby';
   } else if (screenName === 'room') {
@@ -1918,11 +1931,54 @@ function showAuthMsg(text, ok) {
 }
 
 function applyAuthUI() {
-  const logged = !!gameState.auth.username;
-  if (DOM.authBox) DOM.authBox.classList.toggle('hidden', logged);
-  if (DOM.authProfile) DOM.authProfile.classList.toggle('hidden', !logged);
-  if (DOM.authUserLabel) DOM.authUserLabel.textContent = (gameState.auth.avatar || '👤') + ' ' + gameState.auth.username;
+  const logged = !!gameState.auth.username || !!gameState.auth.isGuest;
+  // Header dashboard
+  if (DOM.dashName) {
+    DOM.dashName.textContent = gameState.auth.isGuest
+      ? gameState.playerProfile.name + ' (Tamu)'
+      : (gameState.auth.username || gameState.playerProfile.name || 'Pemain');
+  }
+  if (DOM.dashAvatar) DOM.dashAvatar.textContent = gameState.playerProfile.avatar || gameState.auth.avatar || '👦';
+  if (DOM.dashStats) {
+    const wins = (gameState.me && gameState.me.wins) || 0;
+    DOM.dashStats.textContent = gameState.auth.isGuest
+      ? 'Tamu — menang tidak dicatat ke papan'
+      : `Rekor: ${wins} menang`;
+  }
   if (DOM.authMsg) { DOM.authMsg.textContent = ''; DOM.authMsg.className = 'auth-msg'; }
+  applyAuthGate();
+}
+
+// Gerbang: belum login/tamu -> halaman auth; sudah -> dashboard lobby
+function applyAuthGate() {
+  const logged = !!gameState.auth.username || !!gameState.auth.isGuest;
+  if (logged && gameState.screenState === 'auth') {
+    showScreen('lobby');
+    lobbyEnsure();
+  } else if (!logged && gameState.screenState !== 'auth') {
+    showScreen('auth');
+  }
+}
+
+function setAuthMode(mode) {
+  gameState.authMode = mode === 'register' ? 'register' : 'login';
+  if (DOM.authTabLogin) DOM.authTabLogin.classList.toggle('active', gameState.authMode === 'login');
+  if (DOM.authTabRegister) DOM.authTabRegister.classList.toggle('active', gameState.authMode === 'register');
+  if (DOM.authSubmitBtn) DOM.authSubmitBtn.textContent = gameState.authMode === 'register' ? '✨ Buat Akun' : '🚀 Masuk';
+  if (DOM.authPassword) DOM.authPassword.setAttribute('autocomplete', gameState.authMode === 'register' ? 'new-password' : 'current-password');
+}
+
+// Login cepat tanpa akun server
+function loginGuest() {
+  gameState.auth.isGuest = true;
+  gameState.auth.username = '';
+  gameState.auth.avatar = gameState.playerProfile.avatar || '👦';
+  gameState.playerProfile.name = 'Guest-' + Math.floor(1000 + Math.random() * 9000);
+  gameState.playerProfile.avatar = gameState.auth.avatar;
+  persistAuth();
+  applyAuthUI();
+  showToast('Masuk sebagai tamu. Menang tidak dicatat.');
+  updateOnlineUsers();
 }
 
 function persistAuth() {
@@ -1930,7 +1986,9 @@ function persistAuth() {
     localStorage.setItem('unoduel_auth', JSON.stringify({
       token: gameState.auth.token,
       username: gameState.auth.username,
-      avatar: gameState.auth.avatar
+      avatar: gameState.auth.avatar,
+      isGuest: !!gameState.auth.isGuest,
+      guestName: gameState.auth.isGuest ? gameState.playerProfile.name : ''
     }));
   } catch (e) { /* ignore */ }
 }
@@ -1955,13 +2013,14 @@ async function handleAuth(action) {
   gameState.auth.token = data.token || '';
   gameState.auth.username = (data.user && data.user.username) || username;
   gameState.auth.avatar = (data.user && data.user.avatar) || gameState.playerProfile.avatar;
+  gameState.auth.isGuest = false;
   gameState.playerProfile.name = gameState.auth.username;
   gameState.playerProfile.avatar = gameState.auth.avatar;
   if (DOM.authUsername) DOM.authUsername.value = '';
   if (DOM.authPassword) DOM.authPassword.value = '';
   persistAuth();
+  showToast('Selamat datang, ' + gameState.auth.username + '! 👋');
   applyAuthUI();
-  showAuthMsg('Berhasil. Selamat datang, ' + gameState.auth.username + '!', true);
   loadLeaderboard();
   updateOnlineUsers();
 }
@@ -1970,11 +2029,12 @@ async function logoutUser() {
   gameState.auth.token = '';
   gameState.auth.username = '';
   gameState.auth.avatar = '';
+  gameState.auth.isGuest = false;
   gameState.playerProfile.name = 'Pemain';
   gameState.me = null;
   try { localStorage.removeItem('unoduel_auth'); } catch (e) { /* ignore */ }
   applyAuthUI();
-  showAuthMsg('Sudah keluar.', true);
+  showToast('Sudah keluar.');
   loadLeaderboard();
   updateOnlineUsers();
 }
@@ -1982,7 +2042,19 @@ async function logoutUser() {
 async function restoreAuth() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem('unoduel_auth') || 'null'); } catch (e) { /* ignore */ }
-  if (!saved || !saved.token) { applyAuthUI(); return; }
+  if (!saved || (!saved.token && !saved.isGuest)) { applyAuthUI(); return; }
+
+  // Sesi tamu: langsung masuk dashboard tanpa cek server
+  if (saved.isGuest) {
+    gameState.auth.isGuest = true;
+    gameState.auth.username = '';
+    gameState.auth.avatar = saved.avatar || '👦';
+    gameState.playerProfile.name = saved.guestName || 'Guest-' + Math.floor(1000 + Math.random() * 9000);
+    gameState.playerProfile.avatar = gameState.auth.avatar;
+    applyAuthUI();
+    return;
+  }
+
   try {
     const res = await fetch('/api/me', { headers: { Authorization: 'Bearer ' + saved.token } });
     const data = await res.json();
@@ -2071,7 +2143,7 @@ async function loadLeaderboard() {
 
 async function recordWin(name) {
   if (!name || name === 'Bot') return;
-  if (!gameState.auth.username) return; // tamu tidak dicatat ke papan
+  if (!gameState.auth.username || gameState.auth.isGuest) return; // tamu tidak dicatat ke papan
   try {
     await fetch('/api/score', {
       method: 'POST',
@@ -2088,19 +2160,21 @@ async function recordWin(name) {
 }
 
 function renderLeaderboard() {
-  const list = DOM.leaderboardList;
+  const lists = [DOM.leaderboardList, DOM.authLeaderboardList].filter(Boolean);
+  const statusHtml = (extra) => `<li class="list-empty">${extra}</li>`;
+  let html = '';
   if (gameState.auth.serverOk && gameState.auth.dbOk === false) {
-    list.innerHTML = '<li class="list-empty">⚠️ Database belum terhubung.<br/><span class="lb-hint">Atur DATABASE_URL di Vercel env lalu redeploy.</span></li>';
-    return;
+    html = statusHtml('⚠️ Database belum terhubung.<br/><span class="lb-hint">Atur DATABASE_URL di Vercel env lalu redeploy.</span>');
+  } else if (!gameState.leaderboard || !gameState.leaderboard.length) {
+    html = statusHtml('Belum ada skor. Menangkan game untuk masuk papan.');
+  } else {
+    const top5 = gameState.leaderboard.slice(0, 5);
+    html = top5.map((e, i) => {
+      const isMe = gameState.me && e.name === gameState.me.name;
+      return `<li class="${isMe ? 'lb-me' : ''}"><span class="rank">${i + 1}</span> ${escapeHtml(e.name)}<span class="points">${e.wins}</span></li>`;
+    }).join('');
   }
-  if (!gameState.leaderboard || !gameState.leaderboard.length) {
-    list.innerHTML = '<li class="list-empty">Belum ada skor. Menangkan game untuk masuk papan.</li>';
-    return;
-  }
-  list.innerHTML = gameState.leaderboard.map((e, i) => {
-    const isMe = gameState.me && e.name === gameState.me.name;
-    return `<li class="${isMe ? 'lb-me' : ''}"><span class="rank">${i + 1}</span> ${escapeHtml(e.name)}<span class="points">${e.wins}</span></li>`;
-  }).join('');
+  lists.forEach((list) => { list.innerHTML = html; });
 }
 /* ============================================
    P2P - LOGIKA CLIENT
@@ -2839,10 +2913,42 @@ function pushStatusEvent(message) {
    EVENT HANDLERS - LOBBY
    ============================================ */
 
-DOM.authLoginBtn.addEventListener('click', () => handleAuth('login'));
-DOM.authRegisterBtn.addEventListener('click', () => handleAuth('register'));
-DOM.authLogoutBtn.addEventListener('click', logoutUser);
-DOM.authPassword.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleAuth('login'); });
+DOM.authTabLogin.addEventListener('click', () => setAuthMode('login'));
+DOM.authTabRegister.addEventListener('click', () => setAuthMode('register'));
+DOM.authSubmitBtn.addEventListener('click', () => handleAuth(gameState.authMode === 'register' ? 'register' : 'login'));
+DOM.authGuestBtn.addEventListener('click', loginGuest);
+DOM.authPassword.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleAuth(gameState.authMode === 'register' ? 'register' : 'login'); });
+DOM.authUsername.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleAuth(gameState.authMode === 'register' ? 'register' : 'login'); });
+
+// Navigasi dashboard
+DOM.dashLogoutBtn.addEventListener('click', logoutUser);
+DOM.dashNavBtns.forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const nav = btn.dataset.nav;
+    if (nav === 'settings') { openSettings(); return; }
+    if (nav === 'rank') {
+      const side = document.querySelector('.dash-side');
+      if (side) side.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      showToast('🏆 Cek papan peringkatmu di samping!');
+      return;
+    }
+    if (nav === 'profile') {
+      showToast(`${DOM.dashName ? DOM.dashName.textContent : 'Pemain'} — ${DOM.dashStats ? DOM.dashStats.textContent : ''}`);
+      return;
+    }
+    if (nav === 'daily') {
+      showToast('📅 Misi Harian segera hadir!');
+      return;
+    }
+  });
+});
+
+// "+ Buat Room" di sidebar room publik
+DOM.authCreateRoomBtn.addEventListener('click', () => {
+  gameState.gameMode = 'online';
+  DOM.roomInfoDisplay.textContent = 'Room Publik (Host)';
+  createRoom(true);
+});
 
 DOM.avatarBtns.forEach((btn) => {
   btn.addEventListener('click', () => {
@@ -3166,7 +3272,10 @@ function buildEmoteGrid() {
    ============================================ */
 
 function init() {
-  showScreen('lobby');
+  // Tampilkan dashboard langsung jika ada sesi tersimpan, kalau tidak ke halaman auth
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem('unoduel_auth') || 'null'); } catch (e) { /* ignore */ }
+  showScreen((saved && (saved.token || saved.isGuest)) ? 'lobby' : 'auth');
 
   lobbyEnsure();
   setTimeout(lobbyRefresh, 2000);

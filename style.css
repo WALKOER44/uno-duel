@@ -47,7 +47,28 @@ select { font-family: inherit; color: inherit; }
   flex-direction: column;
   z-index: 1;
 }
-.screen-active { display: flex; }
+.screen-active { display: flex; animation: screenIn .38s cubic-bezier(.2, .8, .3, 1); }
+@keyframes screenIn {
+  from { opacity: 0; transform: translateY(12px) scale(.995); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ============================================================
+   BACKGROUND ANIMASI — biru terang + pola titik bergeser pelan
+   ============================================================ */
+.bg-play {
+  background-color: #dbe9ff;
+  background-image:
+    radial-gradient(circle, rgba(37, 99, 235, .16) 2px, transparent 2.8px),
+    radial-gradient(circle, rgba(255, 212, 0, .5) 1.5px, transparent 2.4px);
+  background-size: 46px 46px, 23px 23px;
+  background-position: 0 0, 11px 11px;
+  animation: bgDrift 46s linear infinite;
+}
+@keyframes bgDrift {
+  from { background-position: 0 0, 11px 11px; }
+  to { background-position: 46px 46px, 34px 34px; }
+}
 
 /* ============================================================
    CONTROLS
@@ -116,28 +137,126 @@ select { font-family: inherit; color: inherit; }
    ============================================================ */
 #lobby-screen { overflow-y: auto; padding: 16px; }
 
-.lobby-layout {
+.dash-grid {
   width: min(1060px, 100%);
   margin: 0 auto;
-  display: grid;
-  grid-template-columns: 1fr 300px;
-  gap: 16px;
-  align-items: start;
 }
 
-.lobby-main {
+.dash-main {
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
 
-/* Banner logo SVG UNO DUEL di lobby */
-.logo-banner {
-  display: block;
-  width: min(560px, 92vw);
-  margin: 0 auto;
-  filter: drop-shadow(6px 6px 0 rgba(0, 0, 0, .18));
+/* ============================================================
+   LAYOUT DASHBOARD — header profil + grid mode & sidebar
+   ============================================================ */
+#lobby-screen { overflow-y: auto; padding: 16px; }
+
+.dash-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  background: var(--white);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 10px 14px;
+  margin-bottom: 16px;
 }
+.dash-logo { height: 34px; flex: 0 0 auto; }
+.dash-user { display: flex; align-items: center; gap: 10px; flex: 1 1 auto; min-width: 180px; }
+.dash-avatar {
+  width: 46px; height: 46px;
+  display: grid; place-items: center;
+  font-size: 24px;
+  background: var(--yellow);
+  border: 2.5px solid var(--black);
+  border-radius: 50%;
+  box-shadow: 3px 3px 0 0 var(--black);
+}
+.dash-user-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dash-name { font-weight: 900; font-size: 15px; line-height: 1.15; }
+.dash-stats { font-size: 12px; color: #555; }
+.dash-online {
+  font-size: 11px;
+  font-weight: 800;
+  color: #15803d;
+  background: #dcfce7;
+  border: 1.5px solid #15803d;
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+.dash-nav { display: flex; gap: 8px; flex-wrap: wrap; }
+.dash-nav-btn {
+  padding: 8px 12px;
+  font-size: 12.5px;
+  font-weight: 800;
+  border: var(--border);
+  border-radius: 999px;
+  background: var(--white);
+  cursor: pointer;
+  transition: transform .07s ease, box-shadow .07s ease;
+}
+.dash-nav-btn:hover {
+  transform: translateY(-3px);
+  background: var(--yellow);
+  box-shadow: 4px 4px 0 0 var(--black);
+}
+.dash-nav-btn:active { transform: translateY(1px); box-shadow: 1px 1px 0 0 var(--black); }
+.dash-logout {
+  margin-left: auto;
+  background: #fff1f2;
+  color: #b91c1c;
+  border: 2px solid #b91c1c;
+}
+
+.dash-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 16px;
+  align-items: start;
+}
+.dash-main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.dash-side { display: flex; flex-direction: column; gap: 16px; }
+
+.mode-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: var(--white);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px;
+}
+.mode-title { font-size: 20px; font-weight: 900; letter-spacing: .5px; }
+.mode-title em { color: #2563eb; }
+.mode-subtitle { font-size: 13px; color: #555; margin-top: -8px; }
+.btn-big {
+  padding: 16px 20px;
+  font-size: 17px;
+  letter-spacing: 1px;
+}
+.divider {
+  height: 3px;
+  background: repeating-linear-gradient(90deg, var(--black) 0 12px, transparent 12px 20px);
+  opacity: .35;
+  border-radius: 999px;
+}
+.join-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: #f5f9ff;
+  border: 2px dashed #93b4f5;
+  border-radius: var(--radius);
+  padding: 14px;
+}
+
+/* Banner logo SVG UNO DUEL di lobby (digantikan dash-logo) */
+.logo-banner { display: none; }
 
 .avatar-row { display: flex; gap: 8px; }
 .avatar-btn {
@@ -156,7 +275,7 @@ select { font-family: inherit; color: inherit; }
   box-shadow: var(--shadow);
 }
 
-.menu-panel { gap: 12px; }
+.menu-panel { display: none; }
 
 .lobby-btn {
   display: block;
@@ -192,23 +311,108 @@ select { font-family: inherit; color: inherit; }
 }
 .btn:hover { transform: translate(-2px, -2px); box-shadow: 4px 4px 0 0 var(--black); }
 .btn:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 0 var(--black); }
-.auth-box { display: flex; flex-direction: column; gap: 6px; }
-.auth-btns { display: flex; gap: 8px; }
-.auth-btns .btn { flex: 1; }
-.auth-msg { margin-top: 6px; font-size: 11.5px; font-weight: 700; min-height: 15px; color: #555; }
+
+/* ============================================================
+   AUTH — halaman Masuk/Buat Akun (2 kolom)
+   ============================================================ */
+.auth-split {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 430px);
+  gap: 34px;
+  align-items: center;
+  width: min(1060px, 100%);
+  margin: 0 auto;
+  padding: 24px 20px;
+}
+.auth-hero { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.auth-logo {
+  width: min(520px, 100%);
+  filter: drop-shadow(8px 8px 0 rgba(0, 0, 0, .2));
+  animation: authPop .7s cubic-bezier(.34, 1.56, .64, 1) both;
+}
+.auth-desc {
+  font-size: 15.5px;
+  font-weight: 700;
+  color: #1e3a8a;
+  line-height: 1.6;
+  max-width: 480px;
+}
+.auth-desc em { color: var(--yellow); font-style: normal; background: var(--black); padding: 1px 7px; border-radius: 6px; }
+.auth-lb {
+  margin-top: 4px;
+  animation: fadeInUp .5s .15s ease both;
+}
+@keyframes authPop {
+  from { opacity: 0; transform: scale(.7) translateY(14px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.auth-card-wrap { animation: fadeInUp .55s .05s cubic-bezier(.2, .8, .3, 1) both; }
+.auth-card {
+  background: var(--white);
+  border: var(--border);
+  border-radius: 20px;
+  box-shadow: 8px 8px 0 0 var(--black);
+  padding: 22px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.auth-tabs {
+  display: flex;
+  gap: 6px;
+  background: #eef2ff;
+  border: 2.5px solid var(--black);
+  border-radius: 999px;
+  padding: 4px;
+}
+.auth-tab {
+  flex: 1;
+  padding: 9px 0;
+  font-size: 14px;
+  font-weight: 900;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  transition: transform .07s ease, background .12s ease, color .12s ease;
+}
+.auth-tab.active { background: var(--black); color: var(--yellow); }
+.auth-tab:not(.active):hover { background: #dbe7ff; }
+.auth-or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11.5px;
+  font-weight: 900;
+  color: #888;
+  letter-spacing: 2px;
+}
+.auth-or::before, .auth-or::after {
+  content: '';
+  flex: 1;
+  height: 2px;
+  background: repeating-linear-gradient(90deg, #c7d6f5 0 8px, transparent 8px 13px);
+}
+.btn-purple {
+  background: #7c3aed;
+  color: var(--white);
+  border-color: var(--black);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, .25);
+}
+.btn-purple:hover {
+  background: #8b5cf6;
+  box-shadow: 7px 7px 0 0 var(--black), 0 0 18px rgba(124, 58, 237, .45);
+}
+.btn-block { width: 100%; }
+.auth-msg { margin-top: 2px; font-size: 11.5px; font-weight: 700; min-height: 15px; color: #555; }
 .auth-msg.ok { color: #1d7a2f; }
 .auth-msg.err { color: #c0392b; }
-.auth-user {
-  font-size: 13px;
-  font-weight: 900;
-  padding: 8px 10px;
-  border: 2px dashed var(--black);
-  border-radius: var(--radius);
-  background: var(--yellow);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 #leaderboard-list li.lb-me {
   background: var(--yellow);
   border-color: var(--black);
@@ -307,14 +511,6 @@ select { font-family: inherit; color: inherit; }
 /* ============================================================
    SIDEBAR
    ============================================================ */
-.lobby-side {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  position: sticky;
-  top: 16px;
-}
-
 .side-widget {
   background: var(--white);
   border: var(--border);
@@ -914,13 +1110,26 @@ select { font-family: inherit; color: inherit; }
 /* ============================================================
    RESPONSIVE
    ============================================================ */
+@media (max-width: 900px) {
+  .auth-split { grid-template-columns: 1fr; gap: 24px; }
+  .auth-hero { align-items: center; text-align: center; }
+  .auth-logo { margin: 0 auto; }
+  .auth-desc { max-width: 520px; }
+  .dash-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
 @media (max-width: 760px) {
-  .lobby-layout { grid-template-columns: 1fr; }
-  .lobby-side { position: static; flex-direction: row; flex-wrap: wrap; }
+  .dash-header { gap: 8px; }
+  .dash-nav-btn { padding: 7px 10px; font-size: 11.5px; }
   .side-widget { flex: 1 1 240px; }
 }
 
 @media (max-width: 640px) {
+  .auth-split { padding: 16px 12px; gap: 18px; }
+  .auth-card { padding: 18px 14px; border-radius: 16px; box-shadow: 6px 6px 0 0 var(--black); }
+  .dash-grid { gap: 10px; }
+  .mode-panel { padding: 14px; }
+  .dash-avatar { width: 38px; height: 38px; font-size: 20px; }
   .table {
     width: min(300px, 72vw);
     height: min(190px, 32vh);

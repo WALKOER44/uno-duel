@@ -13,32 +13,32 @@
   ⚠️ Koneksi Terputus — mencoba menghubungkan ulang...
 </div>
 
-<!-- ===================== LOBBY / ARENA ===================== -->
-<div id="lobby-screen" class="screen screen-active">
-  <div class="lobby-layout">
+<!-- ===================== HALAMAN MASUK / DAFTAR ===================== -->
+<div id="auth-screen" class="screen bg-play">
+  <div class="auth-split">
+    <section class="auth-hero">
+      <img src="assets/logo.svg" alt="UNO DUEL" class="auth-logo" />
+      <p class="auth-desc">Adu cepat, adu strategi dalam duel kartu UNO.
+        Kumpulkan kemenangan, raih puncak papan peringkat, dan taklukkan lawan dari seluruh dunia!</p>
+      <div class="side-widget auth-lb">
+        <div class="widget-title">🏆 Papan Peringkat — Top 5</div>
+        <ul id="auth-leaderboard-list" class="side-list"></ul>
+      </div>
+    </section>
 
-    <main class="lobby-main">
-      <img src="assets/logo.svg" alt="UNO DUEL — Public Room • Private Room • Solo Training" class="logo-banner" />
+    <section class="auth-card-wrap">
+      <div class="auth-card">
+        <div class="auth-tabs">
+          <button id="auth-tab-login" class="auth-tab active" type="button">Masuk</button>
+          <button id="auth-tab-register" class="auth-tab" type="button">Buat Akun</button>
+        </div>
 
-      <!-- Profil pemain -->
-      <div class="panel profile-panel">
-        <div class="auth-box" id="auth-box">
-          <div class="field-label">Username (Akun)</div>
-          <input id="auth-username" class="text-input" type="text" maxlength="16" placeholder="Username..." />
-          <div class="field-label">Password</div>
-          <input id="auth-password" class="text-input" type="password" placeholder="Password..." />
-          <div class="auth-btns">
-            <button id="auth-login-btn" class="btn btn-yellow">Masuk</button>
-            <button id="auth-register-btn" class="btn btn-white">Daftar</button>
-          </div>
-          <div id="auth-msg" class="auth-msg"></div>
-        </div>
-        <div class="auth-box hidden" id="auth-profile">
-          <div class="auth-user" id="auth-user-label">👤 -</div>
-          <div class="auth-btns">
-            <button id="auth-logout-btn" class="btn btn-white">Keluar</button>
-          </div>
-        </div>
+        <div class="field-label">Username</div>
+        <input id="auth-username" class="text-input" type="text" maxlength="16" placeholder="Username..." autocomplete="username" />
+
+        <div class="field-label">Password</div>
+        <input id="auth-password" class="text-input" type="password" placeholder="Password..." autocomplete="current-password" />
+
         <div class="field-label">Pilih Avatar</div>
         <div class="avatar-row">
           <button class="avatar-btn active" data-avatar="👦">👦</button>
@@ -46,42 +46,69 @@
           <button class="avatar-btn" data-avatar="👩">👩</button>
           <button class="avatar-btn" data-avatar="🥷">🥷</button>
         </div>
-      </div>
 
-      <!-- Menu utama -->
-      <div class="panel menu-panel">
-        <button id="create-room-btn" class="lobby-btn btn-yellow">🎉 BUAT ROOM</button>
-        <button id="create-private-btn" class="lobby-btn btn-black">🔒 ROOM PRIVAT</button>
-        <button id="solo-btn" class="lobby-btn btn-white">🎮 LATIHAN SOLO</button>
+        <div id="auth-msg" class="auth-msg"></div>
+
+        <button id="auth-submit-btn" class="btn btn-purple btn-block">🚀 Masuk</button>
+
+        <div class="auth-or"><span>ATAU</span></div>
+
+        <button id="auth-guest-btn" class="btn btn-white btn-block">👻 Main sebagai Guest</button>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- ===================== LOBBY / DASHBOARD GAME ===================== -->
+<div id="lobby-screen" class="screen bg-play">
+  <div class="dash-header">
+    <div class="dash-user">
+      <img src="assets/logo.svg" alt="UNO DUEL" class="dash-logo" />
+      <span class="dash-avatar" id="dash-avatar">👦</span>
+      <div class="dash-user-meta">
+        <span class="dash-name" id="dash-name">Pemain</span>
+        <span class="dash-stats" id="dash-stats">0 menang</span>
+      </div>
+      <span class="dash-online"><span class="status-dot status-online"></span> Online</span>
+    </div>
+    <nav class="dash-nav">
+      <button class="dash-nav-btn" data-nav="daily">Harian</button>
+      <button class="dash-nav-btn" data-nav="rank">Peringkat</button>
+      <button class="dash-nav-btn" data-nav="profile">Profil</button>
+      <button class="dash-nav-btn" data-nav="settings">Atur</button>
+      <button id="dash-logout-btn" class="dash-nav-btn dash-logout">Keluar</button>
+    </nav>
+  </div>
+
+  <div class="dash-grid">
+    <main class="dash-main">
+      <div class="panel mode-panel">
+        <h2 class="mode-title">🎮 Pilih Mode Bermain</h2>
+
+        <button id="solo-btn" class="lobby-btn btn-white btn-big">🎮 LATIHAN SOLO</button>
         <div class="solo-bot-row">
           <span class="field-label">Jumlah Bot</span>
           <select id="solo-bots" class="select-input"></select>
         </div>
-      </div>
 
-      <!-- Gabung room privat -->
-      <div class="panel private-panel">
-        <div class="field-label">Kode Room Privat</div>
-        <div class="join-row">
-          <input id="room-code-input" class="text-input code-input" type="text" maxlength="6"
-                 placeholder="KODE 6 HURUF" autocomplete="off" spellcheck="false" />
-          <button id="join-private-btn" class="lobby-btn btn-black btn-small">GABUNG</button>
-        </div>
-        <div class="capacity-row">
-          <span class="field-label">Kapasitas Room (2-8)</span>
-          <select id="room-capacity" class="select-input"></select>
-        </div>
-      </div>
+        <div class="divider"><span>atau</span></div>
 
-      <!-- Daftar room publik -->
-      <div class="panel public-panel">
-        <div class="list-head">
-          <span class="list-title">🌍 Room Publik</span>
-          <button id="refresh-rooms-btn" class="refresh-btn" title="Segarkan daftar room">⟳</button>
+        <div class="mode-subtitle">🌍 Multiplayer</div>
+        <button id="create-room-btn" class="lobby-btn btn-purple btn-big">🌍 BUAT ROOM PUBLIK</button>
+        <button id="create-private-btn" class="lobby-btn btn-black btn-big">🔒 BUAT ROOM PRIVAT</button>
+
+        <div class="panel join-box">
+          <div class="field-label">Kode Room Privat</div>
+          <div class="join-row">
+            <input id="room-code-input" class="text-input code-input" type="text" maxlength="6"
+                   placeholder="KODE 6 HURUF" autocomplete="off" spellcheck="false" />
+            <button id="join-private-btn" class="lobby-btn btn-black btn-small">GABUNG</button>
+          </div>
+          <div class="capacity-row">
+            <span class="field-label">Kapasitas Room (2-8)</span>
+            <select id="room-capacity" class="select-input"></select>
+          </div>
         </div>
-        <ul id="public-room-list" class="public-room-list">
-          <li class="list-empty">Memuat room...</li>
-        </ul>
       </div>
 
       <div class="connection-status">
@@ -91,14 +118,26 @@
       </div>
     </main>
 
-    <!-- Sidebar -->
-    <aside class="lobby-side">
+    <aside class="dash-side">
       <div class="side-widget">
-        <div class="widget-title">🟢 ONLINE</div>
+        <div class="widget-title">🌍 Room Publik</div>
+        <div class="list-head">
+          <span class="list-title">Sedang dibuka</span>
+          <button id="refresh-rooms-btn" class="refresh-btn" title="Segarkan daftar room">⟳</button>
+        </div>
+        <ul id="public-room-list" class="public-room-list">
+          <li class="list-empty">Memuat room...</li>
+        </ul>
+        <button id="auth-create-room-btn" class="btn btn-purple btn-block">+ Buat Room</button>
+      </div>
+
+      <div class="side-widget">
+        <div class="widget-title">🟢 Pemain Online</div>
         <ul id="online-users-list" class="side-list"></ul>
       </div>
+
       <div class="side-widget">
-        <div class="widget-title">🏆 PAPAN PERINGKAT</div>
+        <div class="widget-title">🏆 Papan Peringkat</div>
         <ul id="leaderboard-list" class="side-list"></ul>
       </div>
     </aside>
@@ -179,21 +218,6 @@
     </div>
   </div>
 
-  <!-- Pengaturan -->
-  <div id="settings-modal" class="modal hidden">
-    <div class="modal-card">
-      <div class="modal-head">
-        <h3>Pengaturan</h3>
-        <button id="settings-close-btn" class="close-btn">✕</button>
-      </div>
-      <div class="setting-row">
-        <span>Suara</span>
-        <button id="sound-toggle-btn" class="toggle-btn">ON</button>
-      </div>
-      <button id="exit-game-btn" class="lobby-btn btn-black">🚪 Keluar Match</button>
-    </div>
-  </div>
-
   <!-- Chat -->
   <div id="chat-panel" class="chat-panel">
     <div class="chat-head">
@@ -214,6 +238,21 @@
     </div>
   </div>
   <button id="chat-show-btn" class="chat-show-btn hidden">💬</button>
+</div>
+
+<!-- ===================== PENGATURAN (dipakai dari Lobby & Gameplay) ===================== -->
+<div id="settings-modal" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3>Pengaturan</h3>
+      <button id="settings-close-btn" class="close-btn">✕</button>
+    </div>
+    <div class="setting-row">
+      <span>Suara</span>
+      <button id="sound-toggle-btn" class="toggle-btn">ON</button>
+    </div>
+    <button id="exit-game-btn" class="lobby-btn btn-black">🚪 Keluar Match</button>
+  </div>
 </div>
 
 <!-- ===================== LAYAR PEMENANG ===================== -->
