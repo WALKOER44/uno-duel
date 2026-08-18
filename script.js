@@ -713,16 +713,16 @@ function replenishDeck() {
     const top = gameState.discard.pop();
     gameState.deck = shuffleDeck(gameState.discard);
     gameState.discard = [top];
+    gameState.deckCount = gameState.deck.length;
     addLog('🔄 Tumpukan buangan diacak kembali menjadi kartu draw!');
     return;
   }
 
-  // Jika tidak ada tumpukan buangan yang cukup untuk diacak (kurang dari 2 kartu),
-  // buat deck baru dari awal (refresh seperti awal angkanya) agar permainan tidak macet
-  // dan jangan mengosongkan tangan pemain!
-  const freshDeck = createDeckFor(gameState.players.length || 2);
-  gameState.deck = freshDeck;
-  addLog('🔄 Tumpukan kartu habis! Mengisi ulang dengan kartu baru.');
+  // Jika tumpukan draw di tengah habis, isi ulang dengan kartu baru dari awal
+  // (refresh seperti awal angkanya) agar permainan tidak pernah macet tanpa kartu.
+  gameState.deck = createDeckFor(gameState.players.length || 2);
+  gameState.deckCount = gameState.deck.length;
+  addLog('🔄 Tumpukan kartu habis! Mengisi ulang dengan kartu baru dari awal.');
 }
 
 // Darurat: benar-benar tidak ada kartu tersisa -> pemenang pemain kartu tersedikit
@@ -1116,7 +1116,7 @@ function spawnHostPeer() {
   });
 
   peer.on('disconnected', () => {
-      showDisconnectBanner('⚠️ Koneksi Terputus — mencoba menghubungkan ulang...');
+    showDisconnectBanner('⚠️ Koneksi Terputus — mencoba menghubungkan ulang...');
     if (gameState.peer && !gameState.peer.destroyed) {
       setTimeout(() => {
         try {
@@ -1386,7 +1386,7 @@ function lobbyEnsure() {
       lobbyConnectClient();
     } else {
       if (!gameState.connected && !gameState.gameStarted) {
-            }
+      }
     }
   });
 
@@ -1818,7 +1818,7 @@ function joinRoom(code) {
   });
 
   peer.on('disconnected', () => {
-      showDisconnectBanner('⚠️ Koneksi Terputus — mencoba menghubungkan ulang...');
+    showDisconnectBanner('⚠️ Koneksi Terputus — mencoba menghubungkan ulang...');
     if (gameState.peer && !gameState.peer.destroyed) {
       setTimeout(() => {
         try {
