@@ -2926,18 +2926,8 @@ DOM.dashNavBtns.forEach((btn) => {
   btn.addEventListener('click', () => {
     const nav = btn.dataset.nav;
     if (nav === 'settings') { openSettings(); return; }
-    if (nav === 'rank') {
-      const side = document.querySelector('.dash-side');
-      if (side) side.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      showToast('🏆 Cek papan peringkatmu di samping!');
-      return;
-    }
     if (nav === 'profile') {
       showToast(`${DOM.dashName ? DOM.dashName.textContent : 'Pemain'} — ${DOM.dashStats ? DOM.dashStats.textContent : ''}`);
-      return;
-    }
-    if (nav === 'daily') {
-      showToast('📅 Misi Harian segera hadir!');
       return;
     }
   });
