@@ -1,14 +1,22 @@
 {
   "name": "uno-duel",
-  "version": "1.0.0",
-  "description": "UNO Duel - frontend Vercel + serverless API (Neon PostgreSQL)",
+  "version": "2.0.0",
+  "description": "UNO Duel - React (Vite) + PeerJS real-time + Vercel serverless (Neon PostgreSQL)",
   "scripts": {
-    "start": "vercel dev"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "deploy:vercel": "vercel --prod"
   },
   "dependencies": {
-    "pg": "8.13.1"
+    "peerjs": "1.5.4",
+    "pg": "8.13.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^5.4.11",
     "vercel": "38.0.0"
   }
 }

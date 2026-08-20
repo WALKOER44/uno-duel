@@ -481,6 +481,102 @@ function confettiBurst(x, y) {
   }
 }
 
+/* ============================================
+   EKSPRESI EMOSI — ngamuk / nangis / kemberut
+   Muncul di atas seat (atau dock pemain sendiri)
+   lengkap dengan suara khas.
+   ============================================ */
+const EMOTION_DEFS = {
+  rage:  { face: '😡', sound: 'angry' },
+  cry:   { face: '😭', sound: 'sad' },
+  pout:  { face: '😤', sound: 'angry' },
+  shock: { face: '😱', sound: 'shock' },
+  laugh: { face: '😂', sound: 'laugh' },
+  joy:   { face: '🤩', sound: 'cheer' },
+  cool:  { face: '😎', sound: 'cool' },
+  devil: { face: '😈', sound: 'power' },
+  think: { face: '🤔', sound: 'thinking' }
+};
+
+function showEmotion(playerIdx, name, opts = {}) {
+  const def = EMOTION_DEFS[name];
+  if (!def) return;
+  if (gameState.screenState !== 'gameplay') return;
+
+  const seat = DOM.seats.querySelector(`.seat[data-pid="${playerIdx}"]`);
+  let anchor = seat;
+  if (!anchor && playerIdx === myIndex()) anchor = DOM.playerDock;
+  if (!anchor) return;
+
+  const rect = anchor.getBoundingClientRect();
+  const el = document.createElement('div');
+  el.className = `emotion emotion-${name}`;
+  el.textContent = def.face;
+  el.style.left = `${Math.round(rect.left + rect.width / 2)}px`;
+  el.style.top = `${Math.round(rect.top - 10)}px`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2100);
+
+  if (opts.sound !== false && gameState.soundEnabled) {
+    playEmoteSound(def.sound);
+  }
+}
+
+// Ambil reaksi alami saat kena serangan (draw2/draw4/skip).
+// Bot punya mood: kalau berkali-kali diserang -> eskalasi jadi NGAMUK.
+function registerHit(playerIdx, kind) {
+  const p = gameState.players[playerIdx];
+  if (!p) return;
+
+  const mood = gameState.botMoods[playerIdx] || { hits: 0, lastHit: 0 };
+  const now = Date.now();
+  if (now - mood.lastHit < 9000) mood.hits += 1;
+  else mood.hits = 1;
+  mood.lastHit = now;
+  gameState.botMoods[playerIdx] = mood;
+
+  const emoteMap = {
+    draw2: ['cry', 'rage', 'pout'],
+    draw4: ['rage', 'rage', 'shock'],
+    skip: ['pout', 'rage', 'shock']
+  };
+  const pool = emoteMap[kind] || ['pout', 'rage'];
+
+  if (p.isBot) {
+    // Bot: makin sering kena, makin ngamuk (>=2x dalam 9 detik)
+    const emotion = mood.hits >= 2 ? 'rage' : pool[Math.floor(Math.random() * pool.length)];
+    showEmotion(playerIdx, emotion);
+    botSpeak(playerIdx, mood.hits >= 2
+      ? (kind === 'draw4' ? 'draw4rage' : 'draw2rage')
+      : (kind === 'draw4' ? 'draw4' : 'draw2'));
+    return;
+  }
+
+  // Pemain manusia: reaksi halus (tidak tiap saat, biar tidak mengganggu)
+  if (Math.random() < 0.55) {
+    const emotion = pool[Math.floor(Math.random() * pool.length)];
+    showEmotion(playerIdx, emotion);
+  }
+}
+
+// Reaksi menang / kalah untuk semua pemain
+function celebrateWin(winnerIdx) {
+  const me = myIndex();
+  showEmotion(winnerIdx, 'joy', { sound: false });
+  if (me === winnerIdx) {
+    if (gameState.soundEnabled) playSound('win');
+    return;
+  }
+  // Saya kalah: bot pemenang pamer, saya nangis/kemberut
+  if (gameState.soundEnabled) playSound('lose');
+  gameState.players.forEach((p, i) => {
+    if (i !== winnerIdx && i !== me && p.isBot) {
+      setTimeout(() => showEmotion(i, 'cry'), 500);
+    }
+  });
+  setTimeout(() => showEmotion(me, Math.random() < 0.5 ? 'cry' : 'pout', { sound: false }), 600);
+}
+
 // Optimistic play (online): kartu langsung hilang dari tangan & terbang ke meja
 // SEBELUM balasan host — terasa instan tanpa delay.
 function optimisticPlay(idx, color) {
@@ -544,6 +640,8 @@ const gameState = {
   me: null,
 
   soundEnabled: true,
+  musicEnabled: true,
+  botMoods: {}, // { [playerIdx]: { hits, lastHit } } — emosi bot (bisa ngamuk)
 
   // P2P STATE
   peer: null,
@@ -667,6 +765,8 @@ const DOM = {
   settingsModal: document.getElementById('settings-modal'),
   settingsCloseBtn: document.getElementById('settings-close-btn'),
   soundToggleBtn: document.getElementById('sound-toggle-btn'),
+  musicToggleBtn: document.getElementById('music-toggle-btn'),
+  chatVisibilityBtn: document.getElementById('chat-visibility-btn'),
   exitGameBtn: document.getElementById('exit-game-btn'),
 
   colorPicker: document.getElementById('color-picker'),
@@ -703,15 +803,19 @@ function showScreen(screenName) {
   if (screenName === 'auth') {
     if (DOM.authScreen) DOM.authScreen.classList.add('screen-active');
     gameState.screenState = 'auth';
+    MusicEngine.request('lobby');
   } else if (screenName === 'lobby') {
     DOM.lobbyScreen.classList.add('screen-active');
     gameState.screenState = 'lobby';
+    MusicEngine.request('lobby');
   } else if (screenName === 'room') {
     DOM.roomScreen.classList.add('screen-active');
     gameState.screenState = 'room';
+    MusicEngine.request('lobby');
   } else if (screenName === 'gameplay') {
     DOM.gameplayScreen.classList.add('screen-active');
     gameState.screenState = 'gameplay';
+    MusicEngine.request('gameplay');
   }
 }
 
@@ -766,6 +870,8 @@ function showWinnerOverlay(name) {
   const wasHidden = DOM.winnerOverlay.classList.contains('hidden');
   DOM.winnerNameEl.textContent = name || 'Pemain';
   DOM.winnerOverlay.classList.remove('hidden');
+  // Musik berhenti dulu biar fanfare kemenangan kedengaran jelas
+  MusicEngine.stop();
   if (wasHidden) {
     confettiBurst(window.innerWidth / 2, window.innerHeight / 2);
     setTimeout(() => confettiBurst(window.innerWidth * 0.28, window.innerHeight * 0.45), 220);
@@ -799,13 +905,13 @@ function getAudioCtx() {
   return _audioCtx;
 }
 
-function tone(ctx, dest, freq, start, dur, type) {
+function tone(ctx, dest, freq, start, dur, type, vol = 1) {
   const osc = ctx.createOscillator();
   const g = ctx.createGain();
   osc.type = type;
   osc.frequency.value = freq;
   g.gain.setValueAtTime(0.0001, start);
-  g.gain.exponentialRampToValueAtTime(0.9, start + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.9 * vol, start + 0.02);
   g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
   osc.connect(g);
   g.connect(dest);
@@ -826,28 +932,104 @@ function noiseBurst(ctx, dest, start, dur) {
   src.start(start);
 }
 
+// ============================================
+// SUARA (SFX) — pustaka nada & sweep yang lebih kaya
+// ============================================
+function nt(ctx, dest, midi, start, dur, type = 'triangle', vol = 1) {
+  const freq = 440 * Math.pow(2, (midi - 69) / 12);
+  tone(ctx, dest, freq, start, dur, type, vol);
+}
+
+function sweep(ctx, dest, f0, f1, start, dur, type = 'sawtooth', vol = 1) {
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(f0, start);
+  osc.frequency.exponentialRampToValueAtTime(Math.max(20, f1), start + dur);
+  g.gain.setValueAtTime(0.0001, start);
+  g.gain.exponentialRampToValueAtTime(0.9 * vol, start + 0.015);
+  g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+  osc.connect(g);
+  g.connect(dest);
+  osc.start(start);
+  osc.stop(start + dur + 0.03);
+}
+
+// Setiap tipe suara = fungsi(ctx, master, now)
+const SOUND_LIB = {
+  // 'tik-tak' tegas & nyaring (klik umum)
+  click(ctx, m, t) {
+    nt(ctx, m, 72, t, 0.05, 'triangle', 1);
+    nt(ctx, m, 79, t + 0.045, 0.06, 'triangle', 0.85);
+  },
+  // "thwack" kartu dilempar ke tengah
+  play(ctx, m, t) {
+    sweep(ctx, m, 300, 900, t, 0.08, 'square', 0.9);
+    noiseBurst(ctx, m, t, 0.05);
+    nt(ctx, m, 81, t + 0.02, 0.05, 'triangle', 0.5);
+  },
+  // "swoosh" kartu ditarik dari deck
+  draw(ctx, m, t) {
+    sweep(ctx, m, 620, 200, t, 0.15, 'sawtooth', 0.8);
+  },
+  // kilau menyebar (wild)
+  wild(ctx, m, t) {
+    [72, 76, 79, 84].forEach((f, i) => nt(ctx, m, f, t + i * 0.06, 0.12, 'triangle', 0.85));
+  },
+  // turun (skip)
+  skip(ctx, m, t) {
+    nt(ctx, m, 84, t, 0.09, 'square', 0.8);
+    nt(ctx, m, 79, t + 0.09, 0.09, 'square', 0.8);
+    nt(ctx, m, 74, t + 0.18, 0.12, 'square', 0.8);
+  },
+  // naik (reverse)
+  reverse(ctx, m, t) {
+    nt(ctx, m, 64, t, 0.1, 'triangle', 0.9);
+    nt(ctx, m, 71, t + 0.09, 0.1, 'triangle', 0.9);
+    nt(ctx, m, 79, t + 0.18, 0.14, 'triangle', 0.9);
+  },
+  // kartu diacak ulang
+  shuffle(ctx, m, t) {
+    noiseBurst(ctx, m, t, 0.1);
+    noiseBurst(ctx, m, t + 0.1, 0.12);
+    noiseBurst(ctx, m, t + 0.22, 0.14);
+    sweep(ctx, m, 240, 720, t, 0.3, 'triangle', 0.6);
+  },
+  // fanfare kemenangan
+  win(ctx, m, t) {
+    [72, 76, 79, 84, 88, 91].forEach((f, i) => nt(ctx, m, f, t + i * 0.1, 0.18, 'square', 0.9));
+    nt(ctx, m, 96, t + 0.6, 0.4, 'triangle', 0.9);
+  },
+  // sedih kalah
+  lose(ctx, m, t) {
+    nt(ctx, m, 74, t, 0.18, 'sawtooth', 0.7);
+    nt(ctx, m, 71, t + 0.16, 0.18, 'sawtooth', 0.7);
+    nt(ctx, m, 67, t + 0.32, 0.18, 'sawtooth', 0.7);
+    nt(ctx, m, 62, t + 0.48, 0.4, 'sawtooth', 0.7);
+  },
+  // klakson UNO!
+  uno(ctx, m, t) {
+    nt(ctx, m, 72, t, 0.09, 'square', 0.9);
+    nt(ctx, m, 72, t + 0.11, 0.09, 'square', 0.9);
+    nt(ctx, m, 72, t + 0.22, 0.09, 'square', 0.9);
+    nt(ctx, m, 84, t + 0.32, 0.3, 'square', 0.9);
+  },
+  // aksi umum (dipakai +2 / +4)
+  action(ctx, m, t) {
+    sweep(ctx, m, 200, 480, t, 0.12, 'sawtooth', 0.8);
+  }
+};
+
 function playSound(type = 'click') {
   if (!gameState.soundEnabled) return;
   const ctx = getAudioCtx();
   if (!ctx) return;
   const now = ctx.currentTime;
   const master = ctx.createGain();
-  master.gain.value = 0.08;
+  master.gain.value = 0.09;
   master.connect(ctx.destination);
-
-  const sounds = {
-    click: { freq: 520, dur: 0.08, type: 'triangle' },
-    draw: { freq: 300, dur: 0.12, type: 'sawtooth' },
-    play: { freq: 700, dur: 0.07, type: 'square' },
-    wild: { freq: 520, dur: 0.16, type: 'sine' },
-    skip: { freq: 880, dur: 0.09, type: 'square' },
-    reverse: { freq: 440, dur: 0.1, type: 'sine' },
-    shuffle: { freq: 240, dur: 0.18, type: 'sawtooth' },
-    win: { freq: 720, dur: 0.25, type: 'square' },
-    action: { freq: 440, dur: 0.11, type: 'sine' }
-  };
-  const s = sounds[type] || sounds.click;
-  tone(ctx, master, s.freq, now, s.dur, s.type);
+  const fn = SOUND_LIB[type] || SOUND_LIB.click;
+  fn(ctx, master, now);
 }
 
 function emoteSoundOf(emote) {
@@ -933,6 +1115,193 @@ function playEmoteSound(name) {
 }
 
 /* ============================================
+   MUSIK LATAR (generated, tanpa file eksternal)
+   - 'lobby'  : ceria, tempo santai (C major)
+   - 'gameplay': intens, dan makin cepat saat
+     pemain tersisa sedikit (nyatu dengan game)
+   ============================================ */
+const MUSIC_TRACKS = {
+  lobby: {
+    tempo: 92,
+    // [root midi, [interval3, interval5]] — progresi C - Am - F - G
+    chords: [
+      [60, [4, 7]],
+      [57, [3, 7]],
+      [53, [4, 7]],
+      [55, [4, 7]]
+    ],
+    leadDeg: [0, 2, 4, 7, 9, 12, 14]
+  },
+  gameplay: {
+    tempo: 118,
+    // progresi Am - F - C - G (lebih tegang)
+    chords: [
+      [57, [3, 7]],
+      [53, [4, 7]],
+      [48, [3, 7]],
+      [55, [4, 7]]
+    ],
+    leadDeg: [0, 2, 3, 5, 7, 10, 12, 15]
+  }
+};
+
+const MusicEngine = {
+  ctx: null,
+  master: null,
+  timer: null,
+  kind: null,
+  pending: null,
+  running: false,
+  step: 0,
+  nextTime: 0,
+  seed: 1,
+  melody: [],
+
+  enabled() {
+    return !!gameState.musicEnabled;
+  },
+
+  init() {
+    if (this.ctx) return;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    this.ctx = new Ctx();
+    this.master = this.ctx.createGain();
+    this.master.gain.value = 0.05;
+    this.master.connect(this.ctx.destination);
+  },
+
+  // Request musik utk screen tertentu (baru mulai saat ada interaksi user)
+  request(kind) {
+    this.pending = kind;
+    if (!this.enabled()) return;
+    this.tryStart();
+  },
+
+  tryStart() {
+    if (!this.enabled() || !this.pending) return;
+    this.init();
+    if (!this.ctx || !this.master) return;
+    if (this.ctx.state === 'suspended') {
+      try { this.ctx.resume(); } catch (e) { /* ignore */ }
+    }
+    if (this.running && this.kind === this.pending) return;
+    const t = MUSIC_TRACKS[this.pending];
+    if (!t) return;
+    this.stop();
+    this.kind = this.pending;
+    this.step = 0;
+    this.seed = (Date.now() ^ (Math.random() * 1e9)) >>> 0;
+    this.nextTime = this.ctx.currentTime + 0.1;
+    this.melody = this.genMelody(t);
+    this.running = true;
+    this.timer = setInterval(() => this.tick(), 80);
+  },
+
+  stop() {
+    this.running = false;
+    this.kind = null;
+    clearInterval(this.timer);
+    this.timer = null;
+  },
+
+  rand() {
+    this.seed = (this.seed * 1664525 + 1013904223) >>> 0;
+    return this.seed / 4294967296;
+  },
+
+  genMelody(t) {
+    const m = [];
+    for (let i = 0; i < 64; i += 1) {
+      const root = t.chords[i % t.chords.length][0];
+      const deg = t.leadDeg[Math.floor(this.rand() * t.leadDeg.length)];
+      m.push(root + deg + 24);
+    }
+    return m;
+  },
+
+  // Kecepatan menyesuaikan sisa pemain (hanya di gameplay)
+  speedMult() {
+    if (this.kind !== 'gameplay') return 1;
+    const n = gameState.players.length;
+    if (gameState.winner || n <= 0) return 1;
+    if (n <= 2) return 1.25;
+    if (n <= 3) return 1.12;
+    return 1;
+  },
+
+  tick() {
+    const t = MUSIC_TRACKS[this.kind];
+    if (!t || !this.running || !this.ctx) return;
+    const spb = 60 / (t.tempo * this.speedMult());
+    const dt = spb / 2; // 8th note
+    while (this.nextTime < this.ctx.currentTime + 0.3) {
+      this.playStep(this.step, this.nextTime, dt, t);
+      this.step = (this.step + 1) % (t.chords.length * 8);
+      this.nextTime += dt;
+    }
+  },
+
+  playStep(step, time, dt, t) {
+    const bar = Math.floor(step / 8) % t.chords.length;
+    const s = step % 8;
+    const root = t.chords[bar][0];
+    const ivs = t.chords[bar][1];
+
+    // Hat tipis di off-beat (rhythm mengalir)
+    if (s === 2 || s === 6) this.hat(time, dt * 0.4, 0.5);
+
+    // Bass (beat 1 & 3)
+    if (s === 0) this.note(root - 12, time, dt * 1.9, 'triangle', 1.0);
+    if (s === 4) this.note(root + ivs[1] - 12, time, dt * 1.9, 'triangle', 0.85);
+
+    // Arpeggio (8th note mengalir)
+    const arp = [0, 1, 2, 1, 2, 3, 2, 1];
+    this.note(root + ivs[arp[s]] + 12, time, dt * 0.9, 'square', 0.32);
+
+    // Melodi (tiap 2 step)
+    if (s % 2 === 0) {
+      const li = Math.floor(step / 2) % this.melody.length;
+      this.note(this.melody[li], time, dt * 1.9, 'triangle', 0.5);
+    }
+  },
+
+  hat(time, dur, vol) {
+    const len = Math.max(1, Math.floor(this.ctx.sampleRate * dur));
+    const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i += 1) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    const f = this.ctx.createBiquadFilter();
+    f.type = 'highpass';
+    f.frequency.value = 6000;
+    const g = this.ctx.createGain();
+    g.gain.value = 0.16 * vol;
+    src.connect(f);
+    f.connect(g);
+    g.connect(this.master);
+    src.start(time);
+  },
+
+  note(midi, time, dur, type, gain) {
+    const f = 440 * Math.pow(2, (midi - 69) / 12);
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    osc.type = type;
+    osc.frequency.value = f;
+    const peak = 0.28 * gain;
+    g.gain.setValueAtTime(0.0001, time);
+    g.gain.exponentialRampToValueAtTime(peak, time + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, time + dur);
+    osc.connect(g);
+    g.connect(this.master);
+    osc.start(time);
+    osc.stop(time + dur + 0.03);
+  }
+};
+
+/* ============================================
    CHAT & EMOTE (real-time, dua arah)
    Format: { type: 'CHAT', sender, text }
    ============================================ */
@@ -949,7 +1318,8 @@ function appendChat(msg) {
     avatar: msg.avatar || '👤',
     from: msg.sender || msg.from || '',
     text: msg.text !== undefined ? msg.text : msg.message || '',
-    emote: msg.emote !== undefined ? msg.emote : ''
+    emote: msg.emote !== undefined ? msg.emote : '',
+    ts: msg.ts || Date.now()
   };
   gameState.chatHistory.push(entry);
   if (gameState.chatHistory.length > 60) {
@@ -960,20 +1330,26 @@ function appendChat(msg) {
 
 function renderChatEntry(msg) {
   const el = document.createElement('div');
+  const me = myPlayer();
+  const mine = me && msg.from === me.name;
+  const ts = msg.ts ? new Date(msg.ts) : null;
+  const tsStr = ts ? `${String(ts.getHours()).padStart(2, '0')}:${String(ts.getMinutes()).padStart(2, '0')}` : '';
 
   if (msg.kind === 'emote') {
-    el.className = 'chat-msg chat-emote';
+    el.className = `chat-msg chat-emote${mine ? ' mine' : ''}`;
     el.innerHTML = `
       <span class="chat-avatar">${escapeHtml(msg.avatar || '👤')}</span>
       <span class="chat-name">${escapeHtml(msg.from)}</span>
       <span class="chat-emote-symbol">${escapeHtml(msg.emote)}</span>
+      <span class="chat-ts">${tsStr}</span>
     `;
   } else {
-    el.className = 'chat-msg';
+    el.className = `chat-msg${mine ? ' mine' : ''}`;
     el.innerHTML = `
       <span class="chat-avatar">${escapeHtml(msg.avatar || '👤')}</span>
       <span class="chat-name">${escapeHtml(msg.from)}</span>
       <span class="chat-text">${escapeHtml(msg.text)}</span>
+      <span class="chat-ts">${tsStr}</span>
     `;
   }
 
@@ -1101,7 +1477,7 @@ function endRoundFewestCards(reason) {
   gameState.winner = best;
   addLog(`🏆 ${best.name} MENANG (kartu tersedikit)!`);
   showToast(`${best.name} Menang!`);
-  playSound('win');
+  celebrateWin(gameState.players.indexOf(best));
   if (!best.isBot) recordWin(best.name);
   return best;
 }
@@ -1149,7 +1525,7 @@ function roomPlayCard(playerIdx, cardIdx, color = null) {
     gameState.winner = player;
     addLog(`🎉 ${player.name} MENANG!`);
     showToast(`${player.name} Menang!`);
-    playSound('win');
+    celebrateWin(playerIdx);
     if (!player.isBot) {
       recordWin(player.name);
       // Bot yang kalah protes
@@ -1170,9 +1546,11 @@ function roomPlayCard(playerIdx, cardIdx, color = null) {
 
   if (card.value === 'skip') {
     nextIdx = nextTurn(nextIdx);
+    const skippedIdx = nextIdx;
     nextIdx = nextTurn(nextIdx);
     triggerActionEffect(card, nextIdx);
     addLog('⏭ Skip!');
+    registerHit(skippedIdx, 'skip');
     if (player.isBot) botSpeak(playerIdx, 'skip');
   } else if (card.value === 'reverse') {
     gameState.direction *= -1;
@@ -1188,7 +1566,7 @@ function roomPlayCard(playerIdx, cardIdx, color = null) {
     triggerActionEffect(card, nextIdx);
     addLog(`${target.name} ambil +2`);
     playSound('action');
-    if (target.isBot) botSpeak(nextIdx, 'draw2');
+    registerHit(nextIdx, 'draw2');
     nextIdx = nextTurn(nextIdx);
   } else if (card.value === 'wild4') {
     nextIdx = nextTurn(nextIdx);
@@ -1197,7 +1575,7 @@ function roomPlayCard(playerIdx, cardIdx, color = null) {
     triggerActionEffect(card, nextIdx);
     addLog(`${target.name} ambil +4`);
     playSound('action');
-    if (target.isBot) botSpeak(nextIdx, 'draw4');
+    registerHit(nextIdx, 'draw4');
     nextIdx = nextTurn(nextIdx);
   } else {
     nextIdx = nextTurn(nextIdx);
@@ -1231,6 +1609,29 @@ function canStartPair(card, top, hand) {
    BOT CHAT & EMOTE — dialog seru dengan bubble di atas seat
    ============================================================ */
 
+// Persona bot: nama + avatar asli biar terasa main sama orang beneran
+const BOT_PERSONAS = [
+  { name: 'Rendra', avatar: '🧑' },
+  { name: 'Salsa', avatar: '👩' },
+  { name: 'Bima', avatar: '🧔' },
+  { name: 'Citra', avatar: '👧' },
+  { name: 'Bagas', avatar: '👦' },
+  { name: 'Nadia', avatar: '👱‍♀️' },
+  { name: 'Farhan', avatar: '🧑‍🦱' },
+  { name: 'Dewi', avatar: '👩‍🦰' },
+  { name: 'Andi', avatar: '🧑‍💻' },
+  { name: 'Rara', avatar: '👧' }
+];
+
+// Pilih persona bot yang belum dipakai pemain manapun di meja
+function pickBotPersona(players) {
+  const used = new Set(players.map((p) => p && p.name));
+  const fresh = BOT_PERSONAS.filter((b) => !used.has(b.name));
+  const pool = fresh.length ? fresh : BOT_PERSONAS;
+  const pick = pool[Math.floor(Math.random() * pool.length)];
+  return { name: pick.name, avatar: pick.avatar };
+}
+
 const BOT_LINES = {
   draw2: [
     'Waduh curang nih! 😭🔥',
@@ -1243,6 +1644,18 @@ const BOT_LINES = {
     'Sialan lu! 🤬🃏',
     '+4?? Ini mah teror! 💀',
     'Gila sih, +4 terus wkwk 😭'
+  ],
+  draw2rage: [
+    'NGAMUK! +2 TERUS?! 🤬🔥',
+    'SABAR SABAR... GILIRAN GUE! 😤🔥',
+    'UDH GITU AJA?! MAINNYA KOK NGASIH +2 MELULU! 🤬',
+    'Awas ya, gue balas nanti, DUA KALI LIPAT! 😡'
+  ],
+  draw4rage: [
+    'NGAMUK BANGET INI! +4?! 🤯🔥',
+    'INI PERANG, BUKAN MAIN-MAIN! 🤬',
+    'GILA, +4 TERUS?! GUE BALAS PAKE WILD4! 😤',
+    'SABAR, SABAR... SERIUS AMAT LU! 😡💢'
   ],
   uno: [
     'UNO! Dikit lagi menang nih cuy 😎✨',
@@ -1360,7 +1773,7 @@ function roomPlayPair(playerIdx, cardIdxA, cardIdxB, color = null) {
     gameState.winner = player;
     addLog(`🎉 ${player.name} MENANG!`);
     showToast(`${player.name} Menang!`);
-    playSound('win');
+    celebrateWin(playerIdx);
     if (!player.isBot) recordWin(player.name);
     return true;
   }
@@ -1397,13 +1810,16 @@ function botTurn() {
     const current = gameState.players[botIdx];
     if (!current || !current.isBot) return;
 
-    const playable = current.hand.filter((c) => isValidMove(c, topCard()));
+    // Kadang bot "berpikir" dulu (sedikit kebiasaan manusia)
+    if (Math.random() < 0.3) showEmotion(botIdx, 'think', { sound: false });
 
-    if (!playable.length) {
+    const choice = botPickMove(current);
+
+    if (!choice) {
       const drawn = drawCardFor(botIdx);
       if (drawn && isValidMove(drawn, topCard())) {
         const idx = current.hand.indexOf(drawn);
-        const color = drawn.color === 'wild' ? COLORS[Math.floor(Math.random() * 4)] : null;
+        const color = drawn.color === 'wild' ? botChooseColor(current) : null;
         if (roomPlayCard(botIdx, idx, color)) afterRoomChange();
         return;
       }
@@ -1413,11 +1829,56 @@ function botTurn() {
       return;
     }
 
-    const choice = playable[Math.floor(Math.random() * playable.length)];
     const idx = current.hand.indexOf(choice);
-    const color = choice.color === 'wild' ? COLORS[Math.floor(Math.random() * 4)] : null;
+    const color = choice.color === 'wild' ? botChooseColor(current) : null;
     if (roomPlayCard(botIdx, idx, color)) afterRoomChange();
-  }, 700);
+  }, 650 + Math.random() * 550);
+}
+
+// Pilih kartu secara "manusiawi": kadang balas dendam pakai kartu aksi,
+// kadang buang warna yang paling banyak biar cepat habis.
+function botPickMove(bot) {
+  const playable = (bot.hand || []).filter((c) => isValidMove(c, topCard()));
+  if (!playable.length) return null;
+
+  if (Math.random() < 0.35) {
+    const action = playable.find((c) => c.value === 'draw2' || c.value === 'wild4' || c.value === 'skip');
+    if (action) return action;
+  }
+
+  const colors = { red: 0, yellow: 0, green: 0, blue: 0 };
+  (bot.hand || []).forEach((c) => {
+    if (c.color && colors[c.color] !== undefined) colors[c.color] += 1;
+  });
+  let best = 'red';
+  let max = -1;
+  for (const c of COLORS) {
+    if (colors[c] > max) {
+      max = colors[c];
+      best = c;
+    }
+  }
+  const preferred = playable.filter((c) => (c.color || c.displayColor) === best);
+  return preferred.length
+    ? preferred[Math.floor(Math.random() * preferred.length)]
+    : playable[Math.floor(Math.random() * playable.length)];
+}
+
+// Wild: pilih warna yang paling banyak di tangan biar keluar cepat
+function botChooseColor(bot) {
+  const counts = { red: 0, yellow: 0, green: 0, blue: 0 };
+  (bot.hand || []).forEach((c) => {
+    if (c.color && counts[c.color] !== undefined) counts[c.color] += 1;
+  });
+  let best = 'red';
+  let max = -1;
+  for (const c of COLORS) {
+    if (counts[c] > max) {
+      max = counts[c];
+      best = c;
+    }
+  }
+  return best;
 }
 
 // Setelah giliran berganti, lanjutkan otomatis ke bot berikutnya (mendukung banyak bot).
@@ -1425,7 +1886,7 @@ function scheduleNextBotTurn() {
   renderGameplay();
   const nextPlayer = gameState.players[gameState.currentPlayer];
   if (nextPlayer && nextPlayer.isBot && gameState.currentPlayer !== myIndex()) {
-    setTimeout(botTurn, 700);
+    setTimeout(botTurn, 650 + Math.random() * 450);
   }
 }
 
@@ -1443,15 +1904,16 @@ function hostBotTurn() {
     const bot = gameState.players[idx];
     if (!bot || !bot.isBot) return;
 
-    const playable = bot.hand.filter((c) => isValidMove(c, topCard()));
-    if (playable.length) {
-      const choice = playable[Math.floor(Math.random() * playable.length)];
-      const color = choice.color === 'wild' ? COLORS[Math.floor(Math.random() * 4)] : null;
+    if (Math.random() < 0.3) showEmotion(idx, 'think', { sound: false });
+
+    const choice = botPickMove(bot);
+    if (choice) {
+      const color = choice.color === 'wild' ? botChooseColor(bot) : null;
       if (roomPlayCard(idx, bot.hand.indexOf(choice), color)) afterRoomChange();
     } else {
       const drawn = drawCardFor(idx);
       if (drawn && isValidMove(drawn, topCard())) {
-        const color = drawn.color === 'wild' ? COLORS[Math.floor(Math.random() * 4)] : null;
+        const color = drawn.color === 'wild' ? botChooseColor(bot) : null;
         if (roomPlayCard(idx, bot.hand.indexOf(drawn), color)) afterRoomChange();
       } else {
         gameState.currentPlayer = nextTurn(idx);
@@ -1459,7 +1921,7 @@ function hostBotTurn() {
         hostBotTurn();
       }
     }
-  }, 800);
+  }, 750 + Math.random() * 550);
 }
 
 /* ============================================
@@ -1563,6 +2025,7 @@ function applyStatePayload(data) {
   const prevCounts = new Map((gameState.players || []).map((p) => [p.id, opponentHandCount(p)]));
   const prevDeck = gameState.deckCount;
   const prevColor = gameState.currentColor;
+  const prevWinnerName = gameState.winner ? gameState.winner.name : null;
 
   gameState.isOnline = true;
   gameState.roomCode = data.roomCode || data.code || gameState.roomCode;
@@ -1625,7 +2088,8 @@ function applyStatePayload(data) {
       animateDeckToHand();
       playSound('draw');
     }
-    // Lawan ambil kartu (+2/+4) -> kartu terbang deck -> seat mereka
+    // Lawan ambil kartu (+2/+4) -> kartu terbang deck -> seat mereka + emosi kesal
+    const hitKind = newTop && (newTop.value === 'draw2' || newTop.value === 'wild4') ? newTop.value : null;
     gameState.players.forEach((p, i) => {
       if (i === gs.playerIndex) return;
       const before = prevCounts.get(p.id);
@@ -1633,8 +2097,18 @@ function applyStatePayload(data) {
         const from = DOM.drawPile.getBoundingClientRect();
         const to = seatRect(i);
         if (from && to) animateCardTo(from, to, null, { dur: 340, back: true, rot: -7 });
+        if (hitKind) {
+          const emotion = hitKind === 'wild4'
+            ? (Math.random() < 0.5 ? 'rage' : 'shock')
+            : (Math.random() < 0.5 ? 'cry' : 'pout');
+          showEmotion(i, emotion);
+        }
       }
     });
+    // Saya sendiri kena +2/+4 -> kartu masuk + emosi
+    if (hitKind && newMyLen > prevMyLen) {
+      showEmotion(gs.playerIndex, hitKind === 'wild4' ? 'shock' : 'pout');
+    }
     // Kartu atas berubah -> animasi main kartu (dari seat/giliran sebelumnya)
     if (newTop && prevTopId && prevTopId !== newTop.id) {
       const who = prevCur;
@@ -1648,6 +2122,11 @@ function applyStatePayload(data) {
         }
       }
       triggerActionEffect(newTop, who);
+      // Skip: yang kena lewati gilirannya ikut kemberut/kesal
+      if (newTop.value === 'skip' && who !== gs.playerIndex) {
+        const skipped = nextTurn(who);
+        setTimeout(() => showEmotion(skipped, Math.random() < 0.5 ? 'pout' : 'rage'), 220);
+      }
     }
     // Wild/+4 -> flash warna aktif (lewati bila sudah flash saat main optimis)
     if (newTop && (newTop.value === 'wild' || newTop.value === 'wild4') && gs.currentColor && gs.currentColor !== prevColor) {
@@ -1659,6 +2138,12 @@ function applyStatePayload(data) {
 
   if (gameState.winner) {
     pushStatusEvent(`🏆 ${gameState.winner.name} menang!`);
+    // Client: deteksi pemenang baru -> reaksi emosi (senang sih, tapi yang kalah nangis)
+    if (isClient && gameState.winner.name !== prevWinnerName) {
+      const wIdx = gameState.players.findIndex((p) => p.name === gameState.winner.name);
+      if (wIdx > -1) showEmotion(wIdx, 'joy');
+      if (wIdx !== gs.playerIndex) setTimeout(() => showEmotion(gs.playerIndex, 'cry'), 550);
+    }
   } else {
     const cur = gameState.players[gameState.currentPlayer];
     if (cur) pushStatusEvent(`Giliran ${cur.name}`);
@@ -1672,10 +2157,11 @@ function applyStatePayload(data) {
 function autoFillBots() {
   let botId = 1;
   while (gameState.players.length < gameState.roomCapacity) {
+    const persona = pickBotPersona(gameState.players);
     gameState.players.push({
       id: 'bot-' + (botId++),
-      name: 'Bot',
-      avatar: '🤖',
+      name: persona.name,
+      avatar: persona.avatar,
       isMe: false,
       isHost: false,
       isBot: true,
@@ -2020,7 +2506,7 @@ function handleGameAction(idx, conn, msg, isLocal) {
   if (action === 'UNO') {
     player.hasUno = true;
     addLog('🎺 UNO!');
-    playSound('win');
+    playSound('uno');
     broadcastState();
   }
 }
@@ -2147,6 +2633,7 @@ function startOnlineGame() {
   gameState.chatHistory = [];
   gameState.seenChatIds.clear();
   addLog('🃏 Ronde dimulai!');
+  MusicEngine.request('gameplay');
   broadcastState();
   hostBotTurn();
   startResync();
@@ -3021,10 +3508,11 @@ function resetLocalGame(botCount = 1) {
     }
   ];
   for (let b = 1; b < totalPlayers; b += 1) {
+    const persona = pickBotPersona(gameState.players);
     gameState.players.push({
       id: 'bot' + b,
-      name: 'Bot ' + b,
-      avatar: '🤖',
+      name: persona.name,
+      avatar: persona.avatar,
       isMe: false,
       isHost: false,
       isBot: true,
@@ -3063,6 +3551,7 @@ function resetLocalGame(botCount = 1) {
   gameState.chatHistory = [];
   gameState.seenChatIds.clear();
   addLog('🃏 Ronde dimulai!');
+  MusicEngine.request('gameplay');
   renderGameplay();
 
   // Bot sapa pembuka biar suasana hidup
@@ -3680,10 +4169,37 @@ function openSettings() {
   DOM.settingsModal.classList.remove('hidden');
   DOM.soundToggleBtn.classList.toggle('on', gameState.soundEnabled);
   DOM.soundToggleBtn.textContent = gameState.soundEnabled ? 'ON' : 'OFF';
+  DOM.musicToggleBtn.classList.toggle('on', gameState.musicEnabled);
+  DOM.musicToggleBtn.textContent = gameState.musicEnabled ? 'ON' : 'OFF';
+  DOM.chatVisibilityBtn.classList.toggle('on', !DOM.chatPanel.classList.contains('hidden'));
+  DOM.chatVisibilityBtn.textContent = DOM.chatPanel.classList.contains('hidden') ? 'OFF' : 'ON';
 }
 
 function closeSettings() {
   DOM.settingsModal.classList.add('hidden');
+}
+
+function savePrefs() {
+  try {
+    localStorage.setItem('unoduel_prefs', JSON.stringify({
+      sound: gameState.soundEnabled,
+      music: gameState.musicEnabled
+    }));
+  } catch (e) {
+    /* ignore */
+  }
+}
+
+function loadPrefs() {
+  try {
+    const p = JSON.parse(localStorage.getItem('unoduel_prefs') || 'null');
+    if (p) {
+      if (typeof p.sound === 'boolean') gameState.soundEnabled = p.sound;
+      if (typeof p.music === 'boolean') gameState.musicEnabled = p.music;
+    }
+  } catch (e) {
+    /* ignore */
+  }
 }
 
 DOM.settingsCloseBtn.addEventListener('click', closeSettings);
@@ -3700,7 +4216,29 @@ DOM.soundToggleBtn.addEventListener('click', () => {
   gameState.soundEnabled = !gameState.soundEnabled;
   DOM.soundToggleBtn.classList.toggle('on', gameState.soundEnabled);
   DOM.soundToggleBtn.textContent = gameState.soundEnabled ? 'ON' : 'OFF';
+  savePrefs();
   if (gameState.soundEnabled) playSound('click');
+});
+
+DOM.musicToggleBtn.addEventListener('click', () => {
+  gameState.musicEnabled = !gameState.musicEnabled;
+  DOM.musicToggleBtn.classList.toggle('on', gameState.musicEnabled);
+  DOM.musicToggleBtn.textContent = gameState.musicEnabled ? 'ON' : 'OFF';
+  savePrefs();
+  if (gameState.musicEnabled) {
+    MusicEngine.tryStart();
+  } else {
+    MusicEngine.stop();
+  }
+});
+
+// Sembunyikan / tampilkan chat dari pengaturan (sinkron dengan tombol di panel)
+DOM.chatVisibilityBtn.addEventListener('click', () => {
+  const hidden = !DOM.chatPanel.classList.contains('hidden');
+  DOM.chatPanel.classList.add('hidden');
+  DOM.chatShowBtn.classList.toggle('hidden', !hidden);
+  DOM.chatVisibilityBtn.classList.toggle('on', !hidden);
+  DOM.chatVisibilityBtn.textContent = hidden ? 'ON' : 'OFF';
 });
 
 DOM.exitGameBtn.addEventListener('click', () => {
@@ -3789,7 +4327,7 @@ DOM.unoBtn.addEventListener('click', () => {
     me.hasUno = true;
     addLog('🎺 UNO!');
     showToast('UNO!');
-    playSound('win');
+    playSound('uno');
     renderGameplay();
   }
 });
@@ -3894,6 +4432,18 @@ function buildEmoteGrid() {
    ============================================ */
 
 function init() {
+  loadPrefs();
+
+  // Musik latar baru mulai setelah ada interaksi pertama pengguna
+  // (kebijakan autoplay browser). Setelah itu berjalan terus antar-layar.
+  const kickMusic = () => {
+    MusicEngine.tryStart();
+    document.removeEventListener('pointerdown', kickMusic);
+    document.removeEventListener('touchstart', kickMusic);
+  };
+  document.addEventListener('pointerdown', kickMusic);
+  document.addEventListener('touchstart', kickMusic);
+
   // Tampilkan dashboard langsung jika ada sesi tersimpan, kalau tidak ke halaman auth
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem('unoduel_auth') || 'null'); } catch (e) { /* ignore */ }
@@ -3926,8 +4476,10 @@ function init() {
   gameState.playerProfile.avatar = DOM.avatarBtns[0].dataset.avatar;
   DOM.avatarBtns[0].classList.add('active');
 
-  DOM.soundToggleBtn.classList.add('on');
-  DOM.soundToggleBtn.textContent = 'ON';
+  DOM.soundToggleBtn.classList.toggle('on', gameState.soundEnabled);
+  DOM.soundToggleBtn.textContent = gameState.soundEnabled ? 'ON' : 'OFF';
+  DOM.musicToggleBtn.classList.toggle('on', gameState.musicEnabled);
+  DOM.musicToggleBtn.textContent = gameState.musicEnabled ? 'ON' : 'OFF';
 
   buildEmoteGrid();
 
