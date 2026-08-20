@@ -162,8 +162,8 @@ export default function Lobby() {
           <div className="side-widget">
             <div className="widget-title">🏆 Papan Peringkat</div>
             <ul className="side-list">
-              {view.leaderboard.length === 0 && <li className="list-empty">Belum ada data...</li>}
-              {view.leaderboard.map((row, i) => (
+              {(view.leaderboard || []).length === 0 && <li className="list-empty">Belum ada data...</li>}
+              {(view.leaderboard || []).map((row, i) => (
                 <li key={row.name} className="room-row">
                   <span className="lb-rank">{i + 1}</span>
                   <span>{row.avatar}</span>

@@ -14,10 +14,10 @@ function rectOf(selector) {
   return { left: r.left, top: r.top, width: r.width, height: r.height };
 }
 
-function makeFly(deck, hand, delay = 0, dur = 0.55) {
+function makeFly(deck, hand, delay = 0, dur = 0.55, frac = 1) {
   const sx = deck.left + deck.width / 2;
   const sy = deck.top + deck.height / 2;
-  const ex = hand.left + hand.width;
+  const ex = hand.left + hand.width * frac;
   const ey = hand.top + hand.height * 0.55;
   return { id: nextId(), sx, sy, ex, ey, delay, dur };
 }
@@ -37,14 +37,17 @@ export default function FlyingCard() {
 
   useEffect(() => {
     if (g.started && !dealtRef.current && g.myHand.length > 0) {
-      dealtRef.current = true;
       const t = setTimeout(() => {
+        if (dealtRef.current) return;
+        dealtRef.current = true;
         const deck = rectOf('.deck-card.deck-back');
         const hand = rectOf('.my-hand');
         if (!deck || !hand) return;
         const list = [];
-        for (let i = 0; i < Math.min(g.myHand.length, DEAL_COUNT); i += 1) {
-          const fly = makeFly(deck, hand, i * 0.09, 0.5);
+        const count = Math.min(g.myHand.length, DEAL_COUNT);
+        for (let i = 0; i < count; i += 1) {
+          const frac = count === 1 ? 0.5 : (i + 0.5) / count;
+          const fly = makeFly(deck, hand, i * 0.09, 0.5, frac);
           list.push(fly);
           setTimeout(() => remove(fly.id), 900 + i * 90);
         }

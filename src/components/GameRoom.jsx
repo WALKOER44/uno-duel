@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useGame } from '../context/GameContext.jsx';
-import { useSettings } from '../context/SettingsContext.jsx';
+import { useSettings, useAudioActions } from '../context/SettingsContext.jsx';
 import Table from './Table.jsx';
 import Seats from './Seats.jsx';
 import PlayerDock from './PlayerDock.jsx';
@@ -14,7 +14,8 @@ import FlyingCard from './fx/FlyingCard.jsx';
 
 export default function GameRoom() {
   const { view, newRound } = useGame();
-  const { openSettings, sfx, prefs } = useSettings();
+  const { openSettings, prefs } = useSettings();
+  const { sfx } = useAudioActions();
   const g = view.game;
   const prevLogRef = useRef('');
   const [mood, setMood] = useState('idle');

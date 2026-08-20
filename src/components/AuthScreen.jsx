@@ -33,8 +33,8 @@ export default function AuthScreen() {
           <div className="side-widget auth-lb">
             <div className="widget-title">🏆 Papan Peringkat — Top 5</div>
             <ul className="side-list">
-              {view.leaderboard.length === 0 && <li className="list-empty">Belum ada data...</li>}
-              {view.leaderboard.slice(0, 5).map((row, i) => (
+              {(view.leaderboard || []).length === 0 && <li className="list-empty">Belum ada data...</li>}
+              {(view.leaderboard || []).slice(0, 5).map((row, i) => (
                 <li key={row.name} className="room-row">
                   <span className="lb-rank">{i + 1}</span>
                   <span>{row.avatar}</span>

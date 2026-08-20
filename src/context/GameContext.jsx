@@ -1202,7 +1202,7 @@ case MSG.CHAT: {
         setServerStatus('offline');
       }
       const lb = await api.leaderboard();
-      if (lb.ok) setView((v) => ({ ...v, leaderboard: lb.data }));
+      if (lb.ok) setView((v) => ({ ...v, leaderboard: lb.data || [] }));
       await restoreAuth();
       ensureLobby();
       refreshRooms();

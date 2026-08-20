@@ -2,11 +2,11 @@ import { useMemo, useRef, useEffect } from 'react';
 import Card from './Card.jsx';
 import { useGame } from '../context/GameContext.jsx';
 import { isValidMove, canStartPair } from '../engine/rules.js';
-import { useSettings } from '../context/SettingsContext.jsx';
+import { useAudioActions } from '../context/SettingsContext.jsx';
 
 export default function PlayerDock() {
   const { view, playMyCard, playMyPair, drawAction, passAction, unoAction, selectPairCard } = useGame();
-  const { sfx } = useSettings();
+  const { sfx } = useAudioActions();
   const g = view.game;
   const handRef = useRef(null);
 

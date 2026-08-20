@@ -1,10 +1,10 @@
 import Card from './Card.jsx';
 import { useGame } from '../context/GameContext.jsx';
-import { useSettings } from '../context/SettingsContext.jsx';
+import { useAudioActions } from '../context/SettingsContext.jsx';
 
 export default function Table() {
   const { view, drawAction } = useGame();
-  const { sfx } = useSettings();
+  const { sfx } = useAudioActions();
   const g = view.game;
 
   const handleDraw = () => {

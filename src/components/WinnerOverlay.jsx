@@ -1,9 +1,9 @@
 import { useGame } from '../context/GameContext.jsx';
-import { useSettings } from '../context/SettingsContext.jsx';
+import { useAudioActions } from '../context/SettingsContext.jsx';
 
 export default function WinnerOverlay() {
   const { view, newRound, leaveGame } = useGame();
-  const { sfx } = useSettings();
+  const { sfx } = useAudioActions();
   const g = view.game;
   if (!g.winner) return null;
   const isMe = view.room.players[g.myIndex]?.name === g.winner.name;
