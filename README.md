@@ -8,8 +8,7 @@ Game UNO-style dengan **React (Vite)** + P2P (PeerJS) untuk multiplayer online j
 - Mode solo lawan bot dengan **persona manusiawi** (nama/avatar asli, kadang balas dendam, bisa **ngamuk** kalau berkali-kali kena +2/+4)
 - **Ekspresi emosi + suara**: ngamuk 😡, nangis 😭, kemberut 😤, kaget 😱 saat kena +2/+4/skip atau menang/kalah
 - **Karakter & emote pixel art** reaktif terhadap momen permainan
-- **Musik latar generated** (lobby ceria + gameplay makin intens saat pemain makin sedikit), bisa di-on/off dari Pengaturan
-- **BGM "Good Life"**: taruh file MP3 legal milikmu di `public/audio/good-life.mp3`, volume diatur dari Pengaturan. Jika file tidak ada, musik sintesis otomatis menggantikannya
+- **BGM "Good Life"**: taruh file MP3 legal milikmu di `public/audio/good-life.mp3`, volume diatur dari Pengaturan. Lihat "Cara mengganti lagu" di bawah
 - Efek suara kaya (klik kartu, throw, draw, shuffle, fanfare menang) — semuanya sintesis Web Audio
 - **Kartu bergaya asli**: gradien, oval tengah, badge sudut lingkaran putih
 - **Refill deck dari tumpukan buangan** saat kartu tengah habis (diacak ulang otomatis)
@@ -53,8 +52,23 @@ src/
   engine/       — logika murni: kartu, aturan, bot, state game, protokol PeerJS, audio sintesis, sprite pixel
   hooks/        — usePeer (koneksi + watchdog), useAudio (sinkron musik)
 index.html      — entry Vite
-public/audio/   — tempat meletakkan good-life.mp3 (opsional)
+public/audio/   — tempat meletakkan good-life.mp3 (BGM utama)
 api/*.js        — backend serverless Vercel + Neon PostgreSQL (dipakai apa adanya)
+```
+
+## Cara mengganti lagu (BGM)
+
+Satu-satunya lagu latar adalah `public/audio/good-life.mp3`. Cara menggantinya:
+
+1. Siapkan file MP3 legal milikmu (rekaman sendiri / lagu dengan lisensi yang mengizinkan).
+2. Simpan dengan nama **`good-life.mp3`** lalu timpa `public/audio/good-life.mp3` (file contoh sudah ada).
+3. Ukuran file memengaruhi kecepatan muat — disarankan di bawah ~10 MB.
+4. Volume bisa diatur dari Pengaturan (ikon ⚙️ saat bermain).
+5. Build ulang lalu deploy ulang agar versi produksi ikut ter-update:
+
+```bash
+npm run build
+vercel --prod
 ```
 
 ## Catatan online

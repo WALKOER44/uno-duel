@@ -46,7 +46,10 @@ select { font-family: inherit; color: inherit; }
   display: none;
   flex-direction: column;
   z-index: 1;
+  --dock-h: 232px;
 }
+@media (max-width: 640px) { .screen { --dock-h: 176px; } }
+@media (max-height: 520px) and (orientation: landscape) { .screen { --dock-h: 150px; } }
 .screen-active { display: flex; animation: screenIn .38s cubic-bezier(.2, .8, .3, 1); }
 @keyframes screenIn {
   from { opacity: 0; transform: translateY(12px) scale(.995); }
@@ -686,6 +689,8 @@ select { font-family: inherit; color: inherit; }
   /* Mencegah seat/bubble bocor keluar arena (ke topbar / dock pemain) */
   overflow: hidden;
   padding: 4px;
+  /* Sisakan ruang agar meja & seat tidak tertutup dock kartu (fixed) */
+  margin-bottom: var(--dock-h);
 }
 
 /* Meja hijau utama di tengah */
@@ -948,17 +953,12 @@ select { font-family: inherit; color: inherit; }
   height: 93px;
   transform: translate(-50%, -50%);
   animation:
-    flyX var(--dur, .55s) cubic-bezier(.2, .65, .4, 1) var(--delay, 0s) forwards,
-    flyY var(--dur, .55s) cubic-bezier(.5, .2, .85, .4) var(--delay, 0s) forwards,
+    flyDeal var(--dur, .55s) cubic-bezier(.2, .65, .4, 1) var(--delay, 0s) forwards,
     dealSquash var(--dur, .55s) ease var(--delay, 0s) forwards;
 }
-@keyframes flyX {
-  from { transform: translate(calc(var(--sx) - 50%), -50%); }
-  to { transform: translate(calc(var(--ex) - 50%), -50%); }
-}
-@keyframes flyY {
-  from { transform: translate(-50%, calc(var(--sy) - 50%)); }
-  to { transform: translate(-50%, calc(var(--ey) - 50%)); }
+@keyframes flyDeal {
+  from { transform: translate(calc(var(--sx) - 50%), calc(var(--sy) - 50%)); }
+  to { transform: translate(calc(var(--ex) - 50%), calc(var(--ey) - 50%)); }
 }
 @keyframes dealSquash {
   0% { scale: .8 .9; }
@@ -1201,6 +1201,13 @@ select { font-family: inherit; color: inherit; }
    DOCK PEMAIN
    ============================================================ */
 .player-dock {
+  position: fixed;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  z-index: 40;
+  width: min(880px, 100%);
+  box-sizing: border-box;
   background: var(--white);
   border: var(--border);
   border-radius: var(--radius);
@@ -1433,7 +1440,8 @@ select { font-family: inherit; color: inherit; }
    CHAT
    ============================================================ */
 .chat-panel {
-  position: fixed; right: 10px; bottom: 10px;
+  position: fixed; right: 10px;
+  bottom: calc(var(--dock-h) + 10px);
   width: min(300px, calc(100vw - 20px));
   height: min(320px, 60vh);
   background: var(--white);
@@ -1498,7 +1506,8 @@ select { font-family: inherit; color: inherit; }
 .emote-btn:hover { background: var(--yellow); }
 
 .chat-show-btn {
-  position: fixed; right: 14px; bottom: 14px; z-index: 30;
+  position: fixed; right: 14px;
+  bottom: calc(var(--dock-h) + 14px); z-index: 30;
   width: 54px; height: 54px; font-size: 22px;
   border: var(--border); border-radius: 50%;
   background: var(--yellow); box-shadow: var(--shadow);
@@ -1623,7 +1632,7 @@ select { font-family: inherit; color: inherit; }
   .player-dock-header { font-size: 12px; gap: 6px; }
   .my-hand { padding: 4px 2px 8px; }
   .pass-button, .uno-button { padding: 8px 14px; font-size: 12px; }
-  .chat-panel { width: calc(100vw - 16px); right: 8px; bottom: 8px; }
+  .chat-panel { width: calc(100vw - 16px); right: 8px; bottom: calc(var(--dock-h) + 8px); }
 }
 
 /* ============================================================
@@ -1649,12 +1658,12 @@ input, select, textarea { font-size: 16px; }
 }
 .player-dock { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
 .chat-panel {
-  bottom: max(10px, env(safe-area-inset-bottom));
+  bottom: calc(var(--dock-h) + max(10px, env(safe-area-inset-bottom)));
   right: max(10px, env(safe-area-inset-right));
 }
 .chat-show-btn {
   right: max(14px, env(safe-area-inset-right));
-  bottom: max(14px, env(safe-area-inset-bottom));
+  bottom: calc(var(--dock-h) + max(14px, env(safe-area-inset-bottom)));
 }
 .toast { bottom: max(24px, env(safe-area-inset-bottom)); }
 

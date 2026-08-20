@@ -22,25 +22,6 @@ export default function SettingsModal() {
           </button>
         </div>
         <div className="setting-row">
-          <span>🎵 Musik Latar (Sintesis)</span>
-          <button type="button" className={`toggle-btn ${prefs.musicEnabled ? 'on' : ''}`} onClick={() => setPref('musicEnabled', !prefs.musicEnabled)}>
-            {prefs.musicEnabled ? 'ON' : 'OFF'}
-          </button>
-        </div>
-        <div className="setting-row">
-          <span>🎵 Volume Musik Latar</span>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={prefs.musicVolume}
-            onChange={(e) => setPref('musicVolume', Number(e.target.value))}
-            className="volume-slider"
-          />
-          <span className="volume-val">{Math.round(prefs.musicVolume * 100)}%</span>
-        </div>
-        <div className="setting-row">
           <span>🎤 Lagu "Good Life" (BGM)</span>
           <button type="button" className={`toggle-btn ${prefs.goodLifeEnabled ? 'on' : ''}`} onClick={() => setPref('goodLifeEnabled', !prefs.goodLifeEnabled)}>
             {prefs.goodLifeEnabled ? 'ON' : 'OFF'}
@@ -70,7 +51,7 @@ export default function SettingsModal() {
         </button>
         <p className="settings-note">
           🎧 BGM "Good Life" butuh file <code>public/audio/good-life.mp3</code> (rekaman/MP3 legal milikmu).
-          Jika file tidak ada, musik sintesis otomatis menggantikannya.
+          Cara mengganti lagu dijelaskan di README.
         </p>
       </div>
     </div>

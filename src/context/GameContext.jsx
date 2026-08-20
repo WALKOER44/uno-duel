@@ -373,9 +373,10 @@ case MSG.CHAT: {
           if (res.winner) {
             const winnerName = G.winner.name;
             broadcastState(G);
+            commitHost(G);
             setToast(`${winnerName} Menang!`);
             celebrateWinHost(G, res.effects.winnerIdx, winnerName);
-            return res;
+            return;
           }
           afterHostChange(G);
           return res;
@@ -389,6 +390,7 @@ case MSG.CHAT: {
           if (res.winner) {
             const winnerName = G.winner.name;
             broadcastState(G);
+            commitHost(G);
             setToast(`${winnerName} Menang!`);
             celebrateWinHost(G, res.effects.winnerIdx, winnerName);
             return res;
@@ -402,6 +404,7 @@ case MSG.CHAT: {
           if (res.winner) {
             const winnerName = G.winner.name;
             broadcastState(G);
+            commitHost(G);
             setToast(`${winnerName} Menang!`);
             celebrateWinHost(G, res.effects.winnerIdx, winnerName);
             return res;
@@ -415,23 +418,27 @@ case MSG.CHAT: {
             return runHostAction(G, idx, 'PLAY_CARD', { cardId: res.drawn.id });
           }
           broadcastState(G);
+          commitHost(G);
           hostBotTurnLoop(G);
           return res;
         }
         case 'PASS': {
           pass(G, idx);
           broadcastState(G);
+          commitHost(G);
           hostBotTurnLoop(G);
           return { ok: true };
         }
         case 'UNO': {
           G.players[idx].hasUno = true;
           broadcastState(G);
+          commitHost(G);
           return { ok: true };
         }
         case 'NEW_ROUND': {
           startGame(G, { capacity: G.roomCapacity });
           broadcastState(G);
+          commitHost(G);
           hostBotTurnLoop(G);
           return { ok: true };
         }
@@ -439,7 +446,7 @@ case MSG.CHAT: {
           return null;
       }
     },
-    [broadcastState, setToast]
+    [broadcastState, commitHost, setToast]
   );
 
   const celebrateWinHost = useCallback(
@@ -459,9 +466,10 @@ case MSG.CHAT: {
   const afterHostChange = useCallback(
     (G) => {
       broadcastState(G);
+      commitHost(G);
       if (!G.winner) hostBotTurnLoop(G);
     },
-    [broadcastState]
+    [broadcastState, commitHost]
   );
 
   const hostBotTurnLoop = useCallback(
@@ -483,6 +491,7 @@ case MSG.CHAT: {
           if (res.winner) {
             const winnerName = G.winner.name;
             broadcastState(G);
+            commitHost(G);
             setToast(`${winnerName} Menang!`);
             celebrateWinHost(G, res.effects.winnerIdx, winnerName);
             return;
@@ -495,15 +504,17 @@ case MSG.CHAT: {
         if (res && res.winner) {
           const winnerName = G.winner.name;
           broadcastState(G);
+          commitHost(G);
           setToast(`${winnerName} Menang!`);
           celebrateWinHost(G, G.currentPlayer, winnerName);
           return;
         }
         broadcastState(G);
+        commitHost(G);
         hostBotTurnLoop(G);
       }, 750 + Math.random() * 550);
     },
-    [broadcastState, celebrateWinHost, setToast]
+    [broadcastState, commitHost, celebrateWinHost, setToast]
   );
 
   function botChooseColorFor(G, idx) {
@@ -730,6 +741,7 @@ case MSG.CHAT: {
             G.pairSelect = null;
             if (res.winner) {
               broadcastState(G);
+              commitHost(G);
               setToast(`${G.winner.name} Menang!`);
               celebrateWinHost(G, cur, G.winner.name);
               return;
@@ -738,14 +750,16 @@ case MSG.CHAT: {
             return;
           }
           broadcastState(G);
+          commitHost(G);
           hostBotTurnLoop(G);
         } else if (!G.gameStarted) {
           G.players = G.players.filter((x) => x.conn !== conn);
           broadcastState(G);
+          commitHost(G);
         }
       }, 8000);
     },
-    [broadcastState, celebrateWinHost, setToast]
+    [broadcastState, commitHost, celebrateWinHost, setToast]
   );
 
   const startOnlineGame = useCallback(() => {

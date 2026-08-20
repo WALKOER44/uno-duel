@@ -1,12 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { MusicEngine, GoodLifePlayer, playSound, playEmoteSound } from '../engine/audio.js';
+import { GoodLifePlayer, playSound, playEmoteSound } from '../engine/audio.js';
 
 const PREF_KEY = 'unoduel_prefs_v2';
 
 const DEFAULTS = {
   soundEnabled: true,
   musicEnabled: true,
-  musicVolume: 0.6,
   chatVisible: true,
   goodLifeEnabled: true,
   goodLifeVolume: 0.7
@@ -34,15 +33,10 @@ export function SettingsProvider({ children }) {
   }, [prefs]);
 
   useEffect(() => {
-    MusicEngine.musicEnabled = prefs.musicEnabled;
-    MusicEngine.setVolume(prefs.musicVolume);
-  }, [prefs.musicEnabled, prefs.musicVolume]);
-
-  useEffect(() => {
     const gl = goodLifeRef.current;
-    gl.setEnabled(prefs.goodLifeEnabled && prefs.musicEnabled);
+    gl.setEnabled(prefs.goodLifeEnabled);
     gl.setVolume(prefs.goodLifeVolume);
-  }, [prefs.goodLifeEnabled, prefs.goodLifeVolume, prefs.musicEnabled]);
+  }, [prefs.goodLifeEnabled, prefs.goodLifeVolume]);
 
   const setPref = useCallback((key, value) => {
     setPrefs((p) => ({ ...p, [key]: value }));

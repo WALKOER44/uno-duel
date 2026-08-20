@@ -22,3 +22,7 @@ yarn-error.log*
 Thumbs.db
 .vercel
 .env*
+
+# BGM source (untracked backup)
+/Good Life (with G-Eazy & Kehlani).mp3
+
