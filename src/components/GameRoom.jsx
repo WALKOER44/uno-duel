@@ -9,6 +9,8 @@ import ChatBox from './ChatBox.jsx';
 import WinnerOverlay from './WinnerOverlay.jsx';
 import EmotionLayer from './fx/EmotionLayer.jsx';
 import WildFlash from './fx/WildFlash.jsx';
+import CardBurst from './fx/CardBurst.jsx';
+import FlyingCard from './fx/FlyingCard.jsx';
 
 export default function GameRoom() {
   const { view, newRound } = useGame();
@@ -99,6 +101,8 @@ export default function GameRoom() {
       {prefs.chatVisible && <ChatBox />}
       <EmotionLayer mood={mood} />
       <WildFlash color={flashColor} />
+      <CardBurst />
+      <FlyingCard />
     </div>
   );
 }

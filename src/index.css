@@ -870,6 +870,104 @@ select { font-family: inherit; color: inherit; }
 }
 
 /* ============================================================
+   PARTIKEL & GLOW — kartu spesial (+2 / +4 / Skip / Reverse)
+   ============================================================ */
+.fx-arena {
+  position: fixed;
+  inset: 0;
+  z-index: 230;
+  pointer-events: none;
+}
+.fx-burst {
+  position: fixed;
+  z-index: 240;
+  pointer-events: none;
+}
+.fx-glow {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  border: 3px solid var(--gc);
+  box-shadow: 0 0 34px 14px var(--gc);
+  transform: translate(-50%, -50%);
+  animation: glowPulse .8s ease-out forwards;
+}
+@keyframes glowPulse {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(.3); }
+  25% { opacity: .9; transform: translate(-50%, -50%) scale(1.15); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.9); }
+}
+.fx-particle {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--psize, 10px);
+  height: calc(var(--psize, 10px) * 1.4);
+  border: 1.5px solid var(--black);
+  border-radius: 3px;
+  box-shadow: 0 0 6px rgba(0, 0, 0, .35);
+  transform: translate(-50%, -50%);
+  animation: burstParticle var(--dur, .8s) cubic-bezier(.2, .7, .3, 1) var(--delay, 0s) forwards;
+}
+@keyframes burstParticle {
+  0% { opacity: 1; transform: translate(-50%, -50%) rotate(0deg) scale(1); }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty))) rotate(var(--rot)) scale(.45); }
+}
+.fx-label {
+  position: absolute;
+  left: 0;
+  top: -26px;
+  transform: translateX(-50%);
+  background: var(--black);
+  color: var(--lc, var(--yellow));
+  border: 2.5px solid var(--black);
+  border-radius: 10px;
+  padding: 3px 12px;
+  font-size: 20px;
+  font-weight: 900;
+  box-shadow: 3px 3px 0 0 var(--black);
+  animation: labelPop .9s cubic-bezier(.2, .8, .3, 1) forwards;
+}
+@keyframes labelPop {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(.4); }
+  20% { opacity: 1; transform: translate(-50%, -120%) scale(1.2); }
+  60% { opacity: 1; transform: translate(-50%, -170%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -230%) scale(.9); }
+}
+
+/* ============================================================
+   KARTU MELAYANG — pembagian kartu & ambil dari deck
+   ============================================================ */
+.fly-card.dealing {
+  left: 0;
+  top: 0;
+  width: 62px;
+  height: 93px;
+  transform: translate(-50%, -50%);
+  animation:
+    flyX var(--dur, .55s) cubic-bezier(.2, .65, .4, 1) var(--delay, 0s) forwards,
+    flyY var(--dur, .55s) cubic-bezier(.5, .2, .85, .4) var(--delay, 0s) forwards,
+    dealSquash var(--dur, .55s) ease var(--delay, 0s) forwards;
+}
+@keyframes flyX {
+  from { transform: translate(calc(var(--sx) - 50%), -50%); }
+  to { transform: translate(calc(var(--ex) - 50%), -50%); }
+}
+@keyframes flyY {
+  from { transform: translate(-50%, calc(var(--sy) - 50%)); }
+  to { transform: translate(-50%, calc(var(--ey) - 50%)); }
+}
+@keyframes dealSquash {
+  0% { scale: .8 .9; }
+  45% { scale: 1.04 .96; }
+  65% { scale: .98 1.03; }
+  100% { scale: 1; }
+}
+
+/* ============================================================
    EKSPRESI EMOSI — ngamuk / nangis / kemberut (ada suaranya)
    ============================================================ */
 .emotion {
@@ -1577,7 +1675,7 @@ input, select, textarea { font-size: 16px; }
   .my-hand { min-height: calc(var(--card-w) * 1.5 + 6px); }
 }
 /* ============================================================
-   REACT REWRITE � komponen tambahan
+   REACT REWRITE � komponen tambahan
    (pixel art, volume slider, emotion layer, misc)
    ============================================================ */
 
